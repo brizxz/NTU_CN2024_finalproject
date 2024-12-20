@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Server GUI</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f0f0f0;
+            margin: 0;
+            padding: 0;
+        }
+        .container {
+            width: 80%;
+            margin: 50px auto;
+            padding: 20px;
+            background-color: #fff;
+            border-radius: 10px;
+            box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.1);
+        }
+        h1 {
+            text-align: center;
+        }
+        form {
+            margin: 20px 0;
+        }
+        input[type="text"], input[type="password"] {
+            width: 100%;
+            padding: 10px;
+            margin: 5px 0;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+        }
+        button {
+            padding: 10px 20px;
+            background-color: #007bff;
+            color: #fff;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Interactive Server Interface</h1>
+        <form action="/register" method="post">
+            <h3>Register</h3>
+            <label for="username">Username:</label>
+            <input type="text" id="username" name="username" required><br>
+            <label for="password">Password:</label>
+            <input type="password" id="password" name="password" required><br>
+            <button type="submit">Register</button>
+        </form>
+
+        <form action="/login" method="post">
+            <h3>Login</h3>
+            <label for="login-username">Username:</label>
+            <input type="text" id="login-username" name="username" required><br>
+            <label for="login-password">Password:</label>
+            <input type="password" id="login-password" name="password" required><br>
+            <button type="submit">Login</button>
+        </form>
+
+        <form action="/message" method="post">
+            <h3>Send Message</h3>
+            <label for="message">Message:</label>
+            <input type="text" id="message" name="message" required><br>
+            <button type="submit">Send Message</button>
+        </form>
+    </div>
+</body>
+</html>
