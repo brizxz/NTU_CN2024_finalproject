@@ -15,8 +15,10 @@
 #define THREAD_POOL_SIZE 4
 
 std::unordered_map<std::string, std::string> users;
+std::unordered_map<std::string, int> connectedClients;
 pthread_mutex_t usersMutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t queueMutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t clientsMutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t conditionVar = PTHREAD_COND_INITIALIZER;
 
 std::queue<int> clientQueue;
@@ -67,6 +69,11 @@ void* handleClient(void* clientSock) {
                     loggedIn = true;
                     currentUser = username;
                     pthread_mutex_unlock(&usersMutex);
+
+                    pthread_mutex_lock(&clientsMutex);
+                    connectedClients[username] = clientSocket;
+                    pthread_mutex_unlock(&clientsMutex);
+                    
                     send(clientSocket, "LOGIN_SUCCESS", 13, 0);
                 } else {
                     pthread_mutex_unlock(&usersMutex);
@@ -78,18 +85,27 @@ void* handleClient(void* clientSock) {
         } else if (command == "LOGOUT") {
             if (loggedIn) {
                 loggedIn = false;
+                pthread_mutex_lock(&clientsMutex);
+                connectedClients.erase(currentUser);
+                pthread_mutex_unlock(&clientsMutex);
                 send(clientSocket, "LOGOUT_SUCCESS", 14, 0);
             } else {
                 send(clientSocket, "NOT_LOGGED_IN", 14, 0);
             }
         } else if (command.substr(0, 7) == "MESSAGE") {
-            if (command.size() > 8) {
-                std::string message = command.substr(8);
-                std::cout << "Client says: " << message << std::endl;
-                std::cout << "Enter response: ";
-                std::string response;
-                std::getline(std::cin, response);
-                send(clientSocket, response.c_str(), response.size(), 0);
+            size_t spacePos = command.find(' ', 8);
+            if (spacePos != std::string::npos) {
+                std::string recipient = command.substr(8, spacePos - 8);
+                std::string message = command.substr(spacePos + 1);
+                pthread_mutex_lock(&clientsMutex);
+                if (connectedClients.find(recipient) != connectedClients.end()) {
+                    int targetSocket = connectedClients[recipient];
+                    std::string relayMessage = currentUser + ": " + message;
+                    send(targetSocket, relayMessage.c_str(), relayMessage.size(), 0);
+                } else {
+                    send(clientSocket, "USER_NOT_ONLINE", 15, 0);
+                }
+                pthread_mutex_unlock(&clientsMutex);
             } else {
                 send(clientSocket, "INVALID_MESSAGE", 15, 0);
             }
@@ -98,6 +114,11 @@ void* handleClient(void* clientSock) {
         }
     }
     close(clientSocket);
+    if (loggedIn) {
+        pthread_mutex_lock(&clientsMutex);
+        connectedClients.erase(currentUser);
+        pthread_mutex_unlock(&clientsMutex);
+    }
     return nullptr;
 }
 
@@ -107,16 +128,14 @@ void* threadPoolWorker(void*) {
         while (clientQueue.empty()) {
             pthread_cond_wait(&conditionVar, &queueMutex);
         }
-        int clientSocket = clientQueue.front();
+        int* clientSockPtr = new int(clientQueue.front());
         clientQueue.pop();
         pthread_mutex_unlock(&queueMutex);
         
-        int* clientSockPtr = new int(clientSocket);  // Allocate dynamically
-        handleClient((void*)clientSockPtr);  // Pass the dynamically allocated pointer
+        handleClient((void*)clientSockPtr);
     }
     return nullptr;
 }
-
 
 void signalHandler(int signum) {
     std::cout << "Signal " << signum << " received, ignoring." << std::endl;
@@ -174,6 +193,7 @@ int main() {
 
     close(serverSocket);
     pthread_mutex_destroy(&usersMutex);
+    pthread_mutex_destroy(&clientsMutex);
     pthread_mutex_destroy(&queueMutex);
     pthread_cond_destroy(&conditionVar);
     return 0;
