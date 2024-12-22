@@ -2,157 +2,64 @@
 #include <string>
 #include <cstring>
 #include <unistd.h>
-#include <netinet/in.h>
 #include <arpa/inet.h>
-#include <unordered_map>
 #include <csignal>
 #include <pthread.h>
-#include <queue>
-#include <vector>
+#include <openssl/ssl.h>
+#include <openssl/err.h>
+#include <unordered_map>
 
 #define PORT 11115
 #define BUFFER_SIZE 1024
 #define THREAD_POOL_SIZE 4
 
-std::unordered_map<std::string, std::string> users;
 std::unordered_map<std::string, int> connectedClients;
-pthread_mutex_t usersMutex = PTHREAD_MUTEX_INITIALIZER;
-pthread_mutex_t queueMutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t clientsMutex = PTHREAD_MUTEX_INITIALIZER;
-pthread_cond_t conditionVar = PTHREAD_COND_INITIALIZER;
+SSL_CTX* ctx;
 
-std::queue<int> clientQueue;
+void* handleClient(void* sslPtr);
+void initSSL();
+void cleanupSSL();
+void signalHandler(int);
 
-void* handleClient(void* clientSock) {
-    int clientSocket = *(int*)clientSock;
-    delete (int*)clientSock;  // Free memory after extracting socket
+void initSSL() {
+    SSL_load_error_strings();
+    OpenSSL_add_ssl_algorithms();
 
-    char buffer[BUFFER_SIZE];
-    bool loggedIn = false;
-    std::string currentUser;
-
-    while (true) {
-        memset(buffer, 0, BUFFER_SIZE);
-        int bytesReceived = recv(clientSocket, buffer, BUFFER_SIZE, 0);
-        if (bytesReceived <= 0) {
-            std::cout << "Connection closed." << std::endl;
-            break;
-        }
-
-        std::string command(buffer);
-        if (command.substr(0, 8) == "REGISTER") {
-            size_t spacePos = command.find(' ', 9);
-            if (spacePos != std::string::npos) {
-                std::string username = command.substr(9, spacePos - 9);
-                std::string password = command.substr(spacePos + 1);
-                
-                pthread_mutex_lock(&usersMutex);
-                if (users.find(username) == users.end()) {
-                    users[username] = password;
-                    pthread_mutex_unlock(&usersMutex);
-                    send(clientSocket, "REGISTERED", 10, 0);
-                } else {
-                    pthread_mutex_unlock(&usersMutex);
-                    send(clientSocket, "USER_EXISTS", 11, 0);
-                }
-            } else {
-                send(clientSocket, "INVALID_REGISTER", 16, 0);
-            }
-        } else if (command.substr(0, 5) == "LOGIN") {
-            size_t spacePos = command.find(' ', 6);
-            if (spacePos != std::string::npos) {
-                std::string username = command.substr(6, spacePos - 6);
-                std::string password = command.substr(spacePos + 1);
-
-                pthread_mutex_lock(&usersMutex);
-                if (users.find(username) != users.end() && users[username] == password) {
-                    loggedIn = true;
-                    currentUser = username;
-                    pthread_mutex_unlock(&usersMutex);
-
-                    pthread_mutex_lock(&clientsMutex);
-                    connectedClients[username] = clientSocket;
-                    pthread_mutex_unlock(&clientsMutex);
-                    
-                    send(clientSocket, "LOGIN_SUCCESS", 13, 0);
-                } else {
-                    pthread_mutex_unlock(&usersMutex);
-                    send(clientSocket, "LOGIN_FAIL", 10, 0);
-                }
-            } else {
-                send(clientSocket, "INVALID_LOGIN", 12, 0);
-            }
-        } else if (command == "LOGOUT") {
-            if (loggedIn) {
-                loggedIn = false;
-                pthread_mutex_lock(&clientsMutex);
-                connectedClients.erase(currentUser);
-                pthread_mutex_unlock(&clientsMutex);
-                send(clientSocket, "LOGOUT_SUCCESS", 14, 0);
-            } else {
-                send(clientSocket, "NOT_LOGGED_IN", 14, 0);
-            }
-        } else if (command.substr(0, 7) == "MESSAGE") {
-            size_t spacePos = command.find(' ', 8);
-            if (spacePos != std::string::npos) {
-                std::string recipient = command.substr(8, spacePos - 8);
-                std::string message = command.substr(spacePos + 1);
-                pthread_mutex_lock(&clientsMutex);
-                if (connectedClients.find(recipient) != connectedClients.end()) {
-                    int targetSocket = connectedClients[recipient];
-                    std::string relayMessage = currentUser + ": " + message;
-                    send(targetSocket, relayMessage.c_str(), relayMessage.size(), 0);
-                } else {
-                    send(clientSocket, "USER_NOT_ONLINE", 15, 0);
-                }
-                pthread_mutex_unlock(&clientsMutex);
-            } else {
-                send(clientSocket, "INVALID_MESSAGE", 15, 0);
-            }
-        } else {
-            send(clientSocket, "UNKNOWN_COMMAND", 15, 0);
-        }
+    ctx = SSL_CTX_new(TLS_server_method());
+    if (!ctx) {
+        std::cerr << "Unable to create SSL context" << std::endl;
+        exit(EXIT_FAILURE);
     }
-    close(clientSocket);
-    if (loggedIn) {
-        pthread_mutex_lock(&clientsMutex);
-        connectedClients.erase(currentUser);
-        pthread_mutex_unlock(&clientsMutex);
+
+    // Load server certificate and key
+    if (SSL_CTX_use_certificate_file(ctx, "server.crt", SSL_FILETYPE_PEM) <= 0 ||
+        SSL_CTX_use_PrivateKey_file(ctx, "server.key", SSL_FILETYPE_PEM) <= 0) {
+        ERR_print_errors_fp(stderr);
+        exit(EXIT_FAILURE);
     }
-    return nullptr;
 }
 
-void* threadPoolWorker(void*) {
-    while (true) {
-        pthread_mutex_lock(&queueMutex);
-        while (clientQueue.empty()) {
-            pthread_cond_wait(&conditionVar, &queueMutex);
-        }
-        int* clientSockPtr = new int(clientQueue.front());
-        clientQueue.pop();
-        pthread_mutex_unlock(&queueMutex);
-        
-        handleClient((void*)clientSockPtr);
-    }
-    return nullptr;
+void cleanupSSL() {
+    SSL_CTX_free(ctx);
+    EVP_cleanup();
 }
 
 void signalHandler(int signum) {
-    std::cout << "Signal " << signum << " received, ignoring." << std::endl;
-    return;
+    std::cout << "Signal " << signum << " received, shutting down server." << std::endl;
+    cleanupSSL();
+    exit(signum);
 }
 
 int main() {
     signal(SIGINT, signalHandler);
+    initSSL();
 
     int serverSocket = socket(AF_INET, SOCK_STREAM, 0);
     if (serverSocket == -1) {
         std::cerr << "Failed to create socket." << std::endl;
         return 1;
     }
-
-    int opt = 1;
-    setsockopt(serverSocket, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 
     sockaddr_in serverAddr;
     serverAddr.sin_family = AF_INET;
@@ -169,12 +76,7 @@ int main() {
         return 1;
     }
 
-    std::cout << "Server is listening on port " << PORT << std::endl;
-
-    pthread_t pool[THREAD_POOL_SIZE];
-    for (int i = 0; i < THREAD_POOL_SIZE; ++i) {
-        pthread_create(&pool[i], nullptr, threadPoolWorker, nullptr);
-    }
+    std::cout << "Server listening on port " << PORT << std::endl;
 
     while (true) {
         sockaddr_in clientAddr;
@@ -185,16 +87,77 @@ int main() {
             continue;
         }
 
-        pthread_mutex_lock(&queueMutex);
-        clientQueue.push(clientSocket);
-        pthread_mutex_unlock(&queueMutex);
-        pthread_cond_signal(&conditionVar);
+        SSL* ssl = SSL_new(ctx);
+        SSL_set_fd(ssl, clientSocket);
+
+        if (SSL_accept(ssl) <= 0) {
+            std::cerr << "SSL handshake failed." << std::endl;
+            ERR_print_errors_fp(stderr);
+            close(clientSocket);
+            SSL_free(ssl);
+            continue;
+        }
+
+        pthread_t thread;
+        SSL* sslPtr = ssl;
+        pthread_create(&thread, nullptr, handleClient, (void*)sslPtr);
+        pthread_detach(thread);
     }
 
     close(serverSocket);
-    pthread_mutex_destroy(&usersMutex);
-    pthread_mutex_destroy(&clientsMutex);
-    pthread_mutex_destroy(&queueMutex);
-    pthread_cond_destroy(&conditionVar);
+    cleanupSSL();
     return 0;
+}
+
+void* handleClient(void* sslPtr) {
+    SSL* ssl = (SSL*)sslPtr;
+    char buffer[BUFFER_SIZE];
+    bool loggedIn = false;
+    std::string currentUser;
+
+    while (true) {
+        memset(buffer, 0, BUFFER_SIZE);
+        int bytesReceived = SSL_read(ssl, buffer, BUFFER_SIZE);
+        if (bytesReceived <= 0) {
+            std::cout << "Client disconnected." << std::endl;
+            break;
+        }
+
+        std::string command(buffer);
+        std::cout << "Received: " << command << std::endl;
+
+        if (command.substr(0, 5) == "LOGIN") {
+            loggedIn = true;
+            currentUser = command.substr(6); // Extract username
+            pthread_mutex_lock(&clientsMutex);
+            connectedClients[currentUser] = SSL_get_fd(ssl);
+            pthread_mutex_unlock(&clientsMutex);
+            SSL_write(ssl, "LOGIN_SUCCESS", 13);
+        } else if (command == "LOGOUT") {
+            loggedIn = false;
+            pthread_mutex_lock(&clientsMutex);
+            connectedClients.erase(currentUser);
+            pthread_mutex_unlock(&clientsMutex);
+            SSL_write(ssl, "LOGOUT_SUCCESS", 14);
+        } else if (command.substr(0, 7) == "MESSAGE") {
+            pthread_mutex_lock(&clientsMutex);
+            size_t spacePos = command.find(' ', 8);
+            std::string recipient = command.substr(8, spacePos - 8);
+            std::string message = command.substr(spacePos + 1);
+            if (connectedClients.find(recipient) != connectedClients.end()) {
+                int targetSocket = connectedClients[recipient];
+                SSL* targetSSL = SSL_new(ctx);
+                SSL_set_fd(targetSSL, targetSocket);
+                SSL_write(targetSSL, message.c_str(), message.size());
+                SSL_free(targetSSL);
+            } else {
+                SSL_write(ssl, "USER_NOT_ONLINE", 15);
+            }
+            pthread_mutex_unlock(&clientsMutex);
+        }
+    }
+
+    SSL_shutdown(ssl);
+    SSL_free(ssl);
+    return nullptr;
 }
