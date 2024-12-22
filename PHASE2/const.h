@@ -1,0 +1,2 @@
+#define PORT 11115
+#define BUFFER_SIZE 1024
