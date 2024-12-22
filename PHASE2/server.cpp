@@ -1,5 +1,3 @@
-// server.cpp
-
 #include <iostream>
 #include <string>
 #include <cstring>
@@ -8,13 +6,25 @@
 #include <arpa/inet.h>
 #include <unordered_map>
 #include <csignal>
+#include <pthread.h>
+#include <queue>
+#include <vector>
 
 #define PORT 11115
 #define BUFFER_SIZE 1024
+#define THREAD_POOL_SIZE 4
 
-std::unordered_map<std::string, std::string> users; // 模擬的使用者資料庫
+std::unordered_map<std::string, std::string> users;
+pthread_mutex_t usersMutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t queueMutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t conditionVar = PTHREAD_COND_INITIALIZER;
 
-void handleClient(int clientSocket) {
+std::queue<int> clientQueue;
+
+void* handleClient(void* clientSock) {
+    int clientSocket = *(int*)clientSock;
+    delete (int*)clientSock;  // Free memory after extracting socket
+
     char buffer[BUFFER_SIZE];
     bool loggedIn = false;
     std::string currentUser;
@@ -33,10 +43,14 @@ void handleClient(int clientSocket) {
             if (spacePos != std::string::npos) {
                 std::string username = command.substr(9, spacePos - 9);
                 std::string password = command.substr(spacePos + 1);
+                
+                pthread_mutex_lock(&usersMutex);
                 if (users.find(username) == users.end()) {
                     users[username] = password;
+                    pthread_mutex_unlock(&usersMutex);
                     send(clientSocket, "REGISTERED", 10, 0);
                 } else {
+                    pthread_mutex_unlock(&usersMutex);
                     send(clientSocket, "USER_EXISTS", 11, 0);
                 }
             } else {
@@ -47,11 +61,15 @@ void handleClient(int clientSocket) {
             if (spacePos != std::string::npos) {
                 std::string username = command.substr(6, spacePos - 6);
                 std::string password = command.substr(spacePos + 1);
+
+                pthread_mutex_lock(&usersMutex);
                 if (users.find(username) != users.end() && users[username] == password) {
                     loggedIn = true;
                     currentUser = username;
+                    pthread_mutex_unlock(&usersMutex);
                     send(clientSocket, "LOGIN_SUCCESS", 13, 0);
                 } else {
+                    pthread_mutex_unlock(&usersMutex);
                     send(clientSocket, "LOGIN_FAIL", 10, 0);
                 }
             } else {
@@ -80,7 +98,25 @@ void handleClient(int clientSocket) {
         }
     }
     close(clientSocket);
+    return nullptr;
 }
+
+void* threadPoolWorker(void*) {
+    while (true) {
+        pthread_mutex_lock(&queueMutex);
+        while (clientQueue.empty()) {
+            pthread_cond_wait(&conditionVar, &queueMutex);
+        }
+        int clientSocket = clientQueue.front();
+        clientQueue.pop();
+        pthread_mutex_unlock(&queueMutex);
+        
+        int* clientSockPtr = new int(clientSocket);  // Allocate dynamically
+        handleClient((void*)clientSockPtr);  // Pass the dynamically allocated pointer
+    }
+    return nullptr;
+}
+
 
 void signalHandler(int signum) {
     std::cout << "Signal " << signum << " received, ignoring." << std::endl;
@@ -88,7 +124,6 @@ void signalHandler(int signum) {
 }
 
 int main() {
-    // 設置 signal handler 忽略 SIGINT
     signal(SIGINT, signalHandler);
 
     int serverSocket = socket(AF_INET, SOCK_STREAM, 0);
@@ -96,6 +131,9 @@ int main() {
         std::cerr << "Failed to create socket." << std::endl;
         return 1;
     }
+
+    int opt = 1;
+    setsockopt(serverSocket, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 
     sockaddr_in serverAddr;
     serverAddr.sin_family = AF_INET;
@@ -114,6 +152,11 @@ int main() {
 
     std::cout << "Server is listening on port " << PORT << std::endl;
 
+    pthread_t pool[THREAD_POOL_SIZE];
+    for (int i = 0; i < THREAD_POOL_SIZE; ++i) {
+        pthread_create(&pool[i], nullptr, threadPoolWorker, nullptr);
+    }
+
     while (true) {
         sockaddr_in clientAddr;
         socklen_t clientLen = sizeof(clientAddr);
@@ -123,10 +166,15 @@ int main() {
             continue;
         }
 
-        std::cout << "Client connected." << std::endl;
-        handleClient(clientSocket);
+        pthread_mutex_lock(&queueMutex);
+        clientQueue.push(clientSocket);
+        pthread_mutex_unlock(&queueMutex);
+        pthread_cond_signal(&conditionVar);
     }
 
     close(serverSocket);
+    pthread_mutex_destroy(&usersMutex);
+    pthread_mutex_destroy(&queueMutex);
+    pthread_cond_destroy(&conditionVar);
     return 0;
 }
