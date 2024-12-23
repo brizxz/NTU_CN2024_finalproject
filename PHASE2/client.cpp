@@ -7,21 +7,31 @@
 #include <pthread.h>
 #include <openssl/ssl.h>
 #include <openssl/err.h>
+#include <fstream>
+#include <sys/stat.h>
+#include <sys/types.h>
 
 #define PORT 11115
 #define BUFFER_SIZE 1024
+#define FILE_SAVE_DIR "received_files/"
 
 int clientSocket;
 bool running = true;
-bool loggedIn = false;
 SSL* ssl;
 SSL_CTX* ctx;
 
 void displayMenu();
 void* receiveMessages(void*);
+void sendFile();
+void receiveFile();
+void initSSL();
+void cleanupSSL();
+
 void signalHandler(int signum) {
-    std::cout << "Signal " << signum << " received, ignoring." << std::endl;
-    displayMenu();
+    std::cout << "Signal " << signum << " received, shutting down." << std::endl;
+    running = false;
+    cleanupSSL();
+    exit(signum);
 }
 
 void displayMenu() {
@@ -30,7 +40,7 @@ void displayMenu() {
               << "2. LOGIN <username> <password>\n"
               << "3. LOGOUT\n"
               << "4. MESSAGE <username> <message>\n"
-              << "5. P2P <username> <message>  //TODO: Implement peer-to-peer messaging\n"
+              << "5. SEND_FILE <username> <filepath>\n"
               << "6. EXIT\n";
 }
 
@@ -54,7 +64,6 @@ void cleanupSSL() {
 
 int main() {
     signal(SIGINT, signalHandler);
-
     initSSL();
 
     clientSocket = socket(AF_INET, SOCK_STREAM, 0);
@@ -90,35 +99,18 @@ int main() {
     pthread_t receiverThread;
     pthread_create(&receiverThread, nullptr, receiveMessages, nullptr);
 
-    char buffer[BUFFER_SIZE];
-    std::string command;
-
     displayMenu();
+    std::string command;
 
     while (running) {
         std::cout << "> ";
         std::getline(std::cin, command);
-
-        if (command.substr(0, 5) == "LOGIN") {
-            loggedIn = true;
-        } else if (command == "LOGOUT") {
-            loggedIn = false;
-        } else if (command.substr(0, 7) == "MESSAGE") {
-            if (!loggedIn) {
-                std::cout << "You must be logged in to send messages." << std::endl;
-                continue;
-            }
-        } else if (command.substr(0, 3) == "P2P") {
-            std::cout << "Peer-to-peer messaging is not yet implemented." << std::endl;
-            continue;
-        }
+        SSL_write(ssl, command.c_str(), command.size());
 
         if (command == "EXIT") {
             running = false;
             break;
         }
-
-        SSL_write(ssl, command.c_str(), command.size());
     }
 
     close(clientSocket);
@@ -129,6 +121,7 @@ int main() {
 }
 
 void* receiveMessages(void*) {
+    
     char buffer[BUFFER_SIZE];
     while (running) {
         memset(buffer, 0, BUFFER_SIZE);
@@ -139,13 +132,75 @@ void* receiveMessages(void*) {
             break;
         }
         std::string response(buffer);
-        if (response == "USER_NOT_ONLINE") {
-            std::cout << "The recipient is not online." << std::endl;
+        if (response.substr(0, 24) == "FILE_TRANSFER_START_SEND") {
+            sendFile();
+        } else if (response.substr(0, 27) == "FILE_TRANSFER_START_RECEIVE") {
+            receiveFile();
         } else {
-            std::cout << "\nMessage: " << buffer << std::endl;
+            std::cout << "Server: " << response << std::endl;
         }
-        std::cout << "> ";
-        fflush(stdout);
     }
     return nullptr;
+}
+
+void sendFile() {
+    char buffer[BUFFER_SIZE];
+    memset(buffer, 0, BUFFER_SIZE);
+
+    SSL_read(ssl, buffer, BUFFER_SIZE);
+    std::string filePath(buffer);
+     // Open the file for reading
+    std::ifstream file(filePath, std::ios::binary);
+    if (!file) {
+        std::cerr << "Error: Unable to open file " << filePath << std::endl;
+        SSL_write(ssl, "FILE_TRANSFER_FAILED", strlen("FILE_TRANSFER_FAILED"));
+        return;
+    }
+
+    while (file) {
+        memset(buffer, 0, BUFFER_SIZE);
+        file.read(buffer, BUFFER_SIZE);
+        std::streamsize bytesRead = file.gcount();
+        std::cout << (std::string)buffer << std::endl;
+        if (bytesRead > 0) {
+            int bytesWritten = SSL_write(ssl, buffer, bytesRead);
+            if (bytesWritten <= 0) {
+                std::cerr << "Error writing to server during file transfer" << std::endl;
+                break;
+            }
+        }
+    }
+    SSL_write(ssl, "FILE_TRANSFER_END", 17);
+    std::cout << "File transfer ended." << std::endl;
+}
+
+void receiveFile() {
+    char buffer[BUFFER_SIZE];
+    memset(buffer, 0, BUFFER_SIZE);
+
+    SSL_read(ssl, buffer, BUFFER_SIZE);
+    std::string fileName(buffer);
+
+    // POSIX alternative to create directories
+    mkdir(FILE_SAVE_DIR, 0777);
+
+    std::ofstream outFile(std::string(FILE_SAVE_DIR) + fileName, std::ios::binary);
+    if (!outFile) {
+        std::cerr << "Failed to create file for saving: " << fileName << std::endl;
+        return;
+    }
+
+    std::cout << "Receiving file: " << fileName << std::endl;
+
+    while (true) {
+        memset(buffer, 0, BUFFER_SIZE);
+        int bytesRead = SSL_read(ssl, buffer, BUFFER_SIZE);
+        if (bytesRead <= 0 || std::string(buffer).find("FILE_TRANSFER_END") != std::string::npos) {
+            break;
+        }
+        outFile.write(buffer, bytesRead);
+    }
+
+    outFile.close();
+    std::cout << "File received and saved in " << FILE_SAVE_DIR << fileName << std::endl;
 }

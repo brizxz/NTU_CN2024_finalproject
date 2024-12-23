@@ -13,7 +13,10 @@
 #define BUFFER_SIZE 1024
 #define THREAD_POOL_SIZE 4
 
+std::unordered_map<std::string, std::string> users;
 std::unordered_map<std::string, int> connectedClients;
+std::unordered_map<std::string, SSL*> connectedClientSSLs;
+
 pthread_mutex_t clientsMutex = PTHREAD_MUTEX_INITIALIZER;
 SSL_CTX* ctx;
 
@@ -49,6 +52,34 @@ void signalHandler(int signum) {
     std::cout << "Signal " << signum << " received, shutting down server." << std::endl;
     cleanupSSL();
     exit(signum);
+}
+
+void transferFile(SSL* senderSsl, const std::string& recipient, const std::string& fileName) {
+    char buffer[BUFFER_SIZE];
+    memset(buffer, 0, BUFFER_SIZE);
+    
+    pthread_mutex_lock(&clientsMutex);
+    int targetSocket = connectedClients[recipient];
+    SSL* receiverSsl = connectedClientSSLs[recipient];
+    pthread_mutex_unlock(&clientsMutex);
+    SSL_write(senderSsl, "FILE_TRANSFER_START_SEND", 24);
+    SSL_write(senderSsl, fileName.c_str(), fileName.size());
+    SSL_write(receiverSsl, "FILE_TRANSFER_START_RECEIVE", 27);
+    SSL_write(receiverSsl, fileName.c_str(), fileName.size());
+    
+    while (true) {
+        std::cout << "Transferring file to " + recipient << std::endl;
+        memset(buffer, 0, BUFFER_SIZE);
+        int bytesRead = SSL_read(senderSsl, buffer, BUFFER_SIZE);
+        std::cout << "File content received from sender: " buffer << std::endl;
+        if (bytesRead <= 0 || std::string(buffer).find("FILE_TRANSFER_END") != std::string::npos) {
+            break;
+        }
+        SSL_write(receiverSsl, buffer, bytesRead);
+    }
+
+    SSL_write(receiverSsl, "FILE_TRANSFER_END", 17);
+    std::cout << "File transferred to " << recipient << std::endl;
 }
 
 int main() {
@@ -114,7 +145,7 @@ void* handleClient(void* sslPtr) {
     char buffer[BUFFER_SIZE];
     bool loggedIn = false;
     std::string currentUser;
-
+    std::string targetUser;
     while (true) {
         memset(buffer, 0, BUFFER_SIZE);
         int bytesReceived = SSL_read(ssl, buffer, BUFFER_SIZE);
@@ -125,18 +156,50 @@ void* handleClient(void* sslPtr) {
 
         std::string command(buffer);
         std::cout << "Received: " << command << std::endl;
-
-        if (command.substr(0, 5) == "LOGIN") {
+        if (command.substr(0, 8) == "REGISTER") {
+            size_t spacePos = command.find(' ', 9);
+            if (spacePos != std::string::npos) {
+                std::string username = command.substr(9, spacePos - 9);
+                std::string password = command.substr(spacePos + 1);
+                
+                pthread_mutex_lock(&clientsMutex);
+                if (users.find(username) == users.end()) {
+                    users[username] = password;
+                    pthread_mutex_unlock(&clientsMutex);
+                    SSL_write(ssl, "REGISTERED", 10);
+                } else {
+                    pthread_mutex_unlock(&clientsMutex);
+                    SSL_write(ssl, "USER_EXISTS", 11);
+                }
+            } else {
+                SSL_write(ssl, "INVALID_REGISTER", 16);
+            }
+        } else if (command.substr(0, 5) == "LOGIN") {
+            
             loggedIn = true;
-            currentUser = command.substr(6); // Extract username
-            pthread_mutex_lock(&clientsMutex);
-            connectedClients[currentUser] = SSL_get_fd(ssl);
-            pthread_mutex_unlock(&clientsMutex);
-            SSL_write(ssl, "LOGIN_SUCCESS", 13);
+            size_t spacePos = command.find(' ', 6);
+            if (spacePos != std::string::npos) {
+                std::string username = command.substr(6, spacePos - 6);
+                std::string password = command.substr(spacePos + 1);
+                pthread_mutex_lock(&clientsMutex);
+                if (users.find(username) != users.end() && users[username] == password) {
+                    connectedClientSSLs[username] = ssl;
+                    loggedIn = true;
+                    currentUser = username;
+                    connectedClients[currentUser] = SSL_get_fd(ssl);
+                    pthread_mutex_unlock(&clientsMutex);
+                    SSL_write(ssl, "LOGIN_SUCCESS", 13);
+                } else {
+                    pthread_mutex_unlock(&clientsMutex);
+                    SSL_write(ssl, "LOGIN_FAIL", 10);
+                }
+            }
+            
         } else if (command == "LOGOUT") {
             loggedIn = false;
             pthread_mutex_lock(&clientsMutex);
             connectedClients.erase(currentUser);
+            connectedClientSSLs.erase(currentUser);
             pthread_mutex_unlock(&clientsMutex);
             SSL_write(ssl, "LOGOUT_SUCCESS", 14);
         } else if (command.substr(0, 7) == "MESSAGE") {
@@ -144,9 +207,10 @@ void* handleClient(void* sslPtr) {
             size_t spacePos = command.find(' ', 8);
             std::string recipient = command.substr(8, spacePos - 8);
             std::string message = command.substr(spacePos + 1);
+            message = "New message from " + recipient + ": " + message;
             if (connectedClients.find(recipient) != connectedClients.end()) {
                 int targetSocket = connectedClients[recipient];
-                SSL* targetSSL = SSL_new(ctx);
+                SSL* targetSSL = connectedClientSSLs[recipient];
                 SSL_set_fd(targetSSL, targetSocket);
                 SSL_write(targetSSL, message.c_str(), message.size());
                 SSL_free(targetSSL);
@@ -154,6 +218,21 @@ void* handleClient(void* sslPtr) {
                 SSL_write(ssl, "USER_NOT_ONLINE", 15);
             }
             pthread_mutex_unlock(&clientsMutex);
+        } else if (command.substr(0, 9) == "SEND_FILE") {
+            size_t pos = command.find(' ', 10);
+            targetUser = command.substr(10, pos - 10);
+            std::string fileName = command.substr(pos + 1, command.length() - pos);
+            pthread_mutex_lock(&clientsMutex);
+            if (connectedClients.find(targetUser) == connectedClients.end()) {
+                std::string errorMsg = "ERROR: " + targetUser + " is not online.";
+                SSL_write(ssl, errorMsg.c_str(), errorMsg.size());
+                pthread_mutex_unlock(&clientsMutex);
+                continue;
+            }
+            
+            
+            pthread_mutex_unlock(&clientsMutex);
+            transferFile(ssl, targetUser, fileName);
         }
     }
 
@@ -161,3 +240,5 @@ void* handleClient(void* sslPtr) {
     SSL_free(ssl);
     return nullptr;
 }
+
+
