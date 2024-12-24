@@ -12,10 +12,10 @@ CLIENT_EXEC = client
 all: $(SERVER_EXEC) $(CLIENT_EXEC)
 
 $(SERVER_EXEC): server.cpp
-	$(CXX) $(CXXFLAGS) server.cpp -o $(SERVER_EXEC) -lssl -lcrypto
+	$(CXX) $(CXXFLAGS) server.cpp -o $(SERVER_EXEC) -lssl -lcrypto -lportaudio -lmpg123 -lsndfile
 
 $(CLIENT_EXEC): client.cpp
-	$(CXX) $(CXXFLAGS) client.cpp -o $(CLIENT_EXEC) -lssl -lcrypto
+	$(CXX) $(CXXFLAGS) client.cpp -o $(CLIENT_EXEC) -lssl -lcrypto -lportaudio -lmpg123 -lsndfile
 
 # 清除編譯生成的檔案
 clean:

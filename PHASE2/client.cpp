@@ -10,9 +10,14 @@
 #include <fstream>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <vector>
+#include <portaudio.h>
+#include "audio_related.h"
 
 #define PORT 11115
 #define BUFFER_SIZE 1024
+#define FRAMES_PER_BUFFER 2048
+#define CHUNK_SIZE 4096
 #define FILE_SAVE_DIR "received_files/"
 
 int clientSocket;
@@ -24,8 +29,40 @@ void displayMenu();
 void* receiveMessages(void*);
 void sendFile();
 void receiveFile();
+void handleStream();
 void initSSL();
 void cleanupSSL();
+
+static int callback(const void* inputBuffer, void* outputBuffer,
+                    unsigned long framesPerBuffer,
+                    const PaStreamCallbackTimeInfo* timeInfo,
+                    PaStreamCallbackFlags statusFlags,
+                    void* userData) {
+    // std::cout << "Callback" << std::endl;
+    std::vector<uint8_t>* buffer = static_cast<std::vector<uint8_t>*>(userData);
+    uint8_t* out = static_cast<uint8_t*>(outputBuffer);
+
+    int bytesToRead = framesPerBuffer * sizeof(uint16_t);  // Adjust to match buffer size
+    buffer->resize(bytesToRead);  // Ensure buffer is the correct size
+
+    int bytesRead = SSL_read(ssl, buffer->data(), bytesToRead);
+    // std::cout << bytesRead << std::endl;
+    if (bytesRead > 0) {
+        // Copy the received data to the output buffer
+        std::copy(buffer->begin(), buffer->begin() + bytesRead, out);
+
+        // Zero out the remaining part of the buffer if bytesRead < bytesToRead
+        if (bytesRead < bytesToRead) {
+            std::fill(out + bytesRead, out + bytesToRead, 0);
+            return paComplete;
+        }
+    } else {
+        // SSL_read error or connection closed
+        std::fill(out, out + framesPerBuffer * sizeof(uint16_t), 0);
+        return paComplete;
+    }
+    return paContinue;
+}
 
 void signalHandler(int signum) {
     std::cout << "Signal " << signum << " received, shutting down." << std::endl;
@@ -41,7 +78,8 @@ void displayMenu() {
               << "3. LOGOUT\n"
               << "4. MESSAGE <username> <message>\n"
               << "5. SEND_FILE <username> <filepath>\n"
-              << "6. EXIT\n";
+              << "6. STREAMING\n"
+              << "7. EXIT\n";
 }
 
 void initSSL() {
@@ -136,6 +174,8 @@ void* receiveMessages(void*) {
             sendFile();
         } else if (response.substr(0, 27) == "FILE_TRANSFER_START_RECEIVE") {
             receiveFile();
+        } else if (response.substr(0, 15) == "START_STREAMING") {
+            handleStream();
         } else {
             std::cout << "Server: " << response << std::endl;
         }
@@ -172,6 +212,46 @@ void sendFile() {
     }
     SSL_write(ssl, "FILE_TRANSFER_END", 17);
     std::cout << "File transfer ended." << std::endl;
+}
+
+void handleStream() {
+    Pa_Initialize();
+    std::cout << "Start streaming" << std::endl;
+    WAVHeader header;
+    size_t totalBytesRead = 0;
+    while (totalBytesRead < sizeof(WAVHeader)) {
+        int bytes = SSL_read(ssl, reinterpret_cast<char*>(&header) + totalBytesRead, sizeof(WAVHeader) - totalBytesRead);
+        if (bytes <= 0) {
+            int sslError = SSL_get_error(ssl, bytes);
+            std::cerr << "SSL_read failed or connection closed, error: " << sslError << std::endl;
+            return;
+        }
+        totalBytesRead += bytes;
+    }
+    std::cout << "Header Read." << std::endl;
+    std::cout << (int)header.numChannels << " " << (int)header.sampleRate << std::endl;
+    std::vector<uint8_t> buffer(CHUNK_SIZE);
+
+    // PortAudio Stream Setup
+    PaStream* stream;
+    
+    PaError err = Pa_OpenDefaultStream(&stream, 0, header.numChannels, paInt16,
+                                header.sampleRate, FRAMES_PER_BUFFER, callback, &buffer);
+    if (err != paNoError) { 
+        std::cerr << "Failed to open stream: " << Pa_GetErrorText(err) << std::endl;
+        return;
+    }
+    Pa_StartStream(stream);
+
+    // Playback loop
+    while (Pa_IsStreamActive(stream)) {
+        std::cout << "Playbacking..." << std::endl;
+        Pa_Sleep(100);
+    }
+
+    Pa_StopStream(stream);
+    Pa_CloseStream(stream);
+    Pa_Terminate();
 }
 
 void receiveFile() {

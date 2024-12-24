@@ -1,6 +1,7 @@
 #include <iostream>
 #include <string>
 #include <cstring>
+#include <vector>
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <csignal>
@@ -8,9 +9,14 @@
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include <unordered_map>
+#include <fstream>
+#include <portaudio.h>
+#include "audio_related.h"
 
 #define PORT 11115
 #define BUFFER_SIZE 1024
+#define FRAMES_PER_BUFFER 2048
+#define CHUNK_SIZE 4096
 #define THREAD_POOL_SIZE 4
 
 std::unordered_map<std::string, std::string> users;
@@ -71,7 +77,7 @@ void transferFile(SSL* senderSsl, const std::string& recipient, const std::strin
         std::cout << "Transferring file to " + recipient << std::endl;
         memset(buffer, 0, BUFFER_SIZE);
         int bytesRead = SSL_read(senderSsl, buffer, BUFFER_SIZE);
-        std::cout << "File content received from sender: " buffer << std::endl;
+        std::cout << "File content received from sender: " << buffer << std::endl;
         if (bytesRead <= 0 || std::string(buffer).find("FILE_TRANSFER_END") != std::string::npos) {
             break;
         }
@@ -82,6 +88,54 @@ void transferFile(SSL* senderSsl, const std::string& recipient, const std::strin
     std::cout << "File transferred to " << recipient << std::endl;
 }
 
+std::ifstream wavFile;
+void streamAudio(SSL* ssl) {
+    SSL_write(ssl, "START_STREAMING", 15);
+    std::cout << "Start streaming, opening file..." << std::endl;
+    // Open the WAV file
+    wavFile.open("/usr/share/sounds/alsa/Front_Center.wav", std::ios::binary);
+    if (!wavFile.is_open()) {
+        std::cerr << "Failed to open WAV file." << std::endl;
+        return;
+    }
+    std::cout << "File opened" << std::endl;
+    // Read WAV header
+    WAVHeader header;
+    wavFile.read(reinterpret_cast<char*>(&header), sizeof(WAVHeader));
+    std::cout << "Header read" << std::endl;
+    
+    if (strncmp(header.riff, "RIFF", 4) != 0 || strncmp(header.wave, "WAVE", 4) != 0) {
+        std::cerr << "Invalid WAV file." << std::endl;
+        return;
+    }
+    std::cout << "Writing header to client..." << std::endl;
+    int bytesWritten = SSL_write(ssl, &header, sizeof(WAVHeader));
+    std::cout << "Finish writing" << std::endl;
+    if (bytesWritten <= 0) {
+        int sslError = SSL_get_error(ssl, bytesWritten);
+        std::cerr << "SSL_write failed, error: " << sslError << std::endl;
+        return;
+    }
+    std::cout << "Start sending data" << std::endl;
+
+    while (true) {
+        
+        std::vector<uint8_t> buffer(CHUNK_SIZE);
+        std::streamsize bytesRead = wavFile.read(reinterpret_cast<char*>(buffer.data()), buffer.size()).gcount();
+        // std::cout << "Read a chunk" << std::endl;
+        if (bytesRead > 0) {
+            
+            SSL_write(ssl, buffer.data(), bytesRead);
+            // std::cout << "Sent a chunk" << std::endl;
+        } else {
+            SSL_write(ssl, buffer.data(), bytesRead);
+            break;
+        }
+    }
+    wavFile.close();
+
+    std::cout << "Playback finished." << std::endl;
+}
 int main() {
     signal(SIGINT, signalHandler);
     initSSL();
@@ -233,6 +287,8 @@ void* handleClient(void* sslPtr) {
             
             pthread_mutex_unlock(&clientsMutex);
             transferFile(ssl, targetUser, fileName);
+        } else if (command.substr(0, 9) == "STREAMING") { 
+            streamAudio(ssl);
         }
     }
 
