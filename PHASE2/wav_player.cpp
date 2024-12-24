@@ -58,7 +58,7 @@ int main() {
     // Read WAV header
     WAVHeader header;
     wavFile.read(reinterpret_cast<char*>(&header), sizeof(WAVHeader));
-
+    std::cout << header.riff << " " << header.wave << std::endl;
     if (strncmp(header.riff, "RIFF", 4) != 0 || strncmp(header.wave, "WAVE", 4) != 0) {
         std::cerr << "Invalid WAV file." << std::endl;
         return -1;
