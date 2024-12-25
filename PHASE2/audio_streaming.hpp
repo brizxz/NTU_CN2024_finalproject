@@ -1,3 +1,5 @@
+#include <cstdint>
+#include <string>
 struct WAVHeader {
     char riff[4];
     uint32_t fileSize;
@@ -13,3 +15,5 @@ struct WAVHeader {
     char data[4];
     uint32_t dataSize;
 };
+
+std::string headerInfo(const WAVHeader& header);

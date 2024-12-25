@@ -12,10 +12,10 @@
 #include <sys/types.h>
 #include <vector>
 #include <portaudio.h>
-#include "audio_related.h"
+#include "audio_streaming.hpp"
 
 #define PORT 11115
-#define BUFFER_SIZE 1024
+#define BUFFER_SIZE 4096
 #define FRAMES_PER_BUFFER 2048
 #define CHUNK_SIZE 4096
 #define FILE_SAVE_DIR "received_files/"
@@ -38,11 +38,21 @@ static int callback(const void* inputBuffer, void* outputBuffer,
                     const PaStreamCallbackTimeInfo* timeInfo,
                     PaStreamCallbackFlags statusFlags,
                     void* userData) {
-    // std::cout << "Callback" << std::endl;
+    //std::cout << "Callback" << std::endl;
+    char commandBuffer[BUFFER_SIZE] = {};
+    SSL_read(ssl, &commandBuffer, BUFFER_SIZE);
+    if (strcmp(commandBuffer, "STREAMING") != 0) {
+        std::cout << "Connection Corrupted, interrupting playback..." << std::endl;
+        return paComplete;
+    }
+
     std::vector<uint8_t>* buffer = static_cast<std::vector<uint8_t>*>(userData);
     uint8_t* out = static_cast<uint8_t*>(outputBuffer);
 
-    int bytesToRead = framesPerBuffer * sizeof(uint16_t);  // Adjust to match buffer size
+    uint16_t numChannels;
+    SSL_read(ssl, &numChannels, 1);
+
+    int bytesToRead = framesPerBuffer * sizeof(uint16_t) * numChannels;  // Adjust to match buffer size
     buffer->resize(bytesToRead);  // Ensure buffer is the correct size
 
     int bytesRead = SSL_read(ssl, buffer->data(), bytesToRead);
@@ -217,7 +227,8 @@ void sendFile() {
 void handleStream() {
     Pa_Initialize();
     std::cout << "Start streaming" << std::endl;
-    WAVHeader header;
+    std::string WAVHeaderInfo;
+    /*
     size_t totalBytesRead = 0;
     while (totalBytesRead < sizeof(WAVHeader)) {
         int bytes = SSL_read(ssl, reinterpret_cast<char*>(&header) + totalBytesRead, sizeof(WAVHeader) - totalBytesRead);
@@ -229,14 +240,34 @@ void handleStream() {
         totalBytesRead += bytes;
     }
     std::cout << "Header Read." << std::endl;
-    std::cout << (int)header.numChannels << " " << (int)header.sampleRate << std::endl;
-    std::vector<uint8_t> buffer(CHUNK_SIZE);
+    */
+
+    char headerBuffer[256];  // Buffer to receive the data
+    int bytesRead = SSL_read(ssl, headerBuffer, sizeof(headerBuffer) - 1);
+
+    if (bytesRead <= 0) {
+        std::cerr << "SSL_read failed" << std::endl;
+        return;
+    }
+
+    headerBuffer[bytesRead] = '\0';
+    std::string receivedData(headerBuffer);
+    uint16_t numChannels;
+    uint32_t sampleRate;
+
+    size_t delimiterPos = receivedData.find(':');
+    numChannels = static_cast<uint16_t>(std::stoi(receivedData.substr(0, delimiterPos)));
+    sampleRate = static_cast<uint32_t>(std::stoi(receivedData.substr(delimiterPos + 1)));
+
+
+    std::cout << (int)numChannels << " " << (int)sampleRate << std::endl;
+    std::vector<uint8_t> buffer(CHUNK_SIZE * numChannels);
 
     // PortAudio Stream Setup
     PaStream* stream;
     
-    PaError err = Pa_OpenDefaultStream(&stream, 0, header.numChannels, paInt16,
-                                header.sampleRate, FRAMES_PER_BUFFER, callback, &buffer);
+    PaError err = Pa_OpenDefaultStream(&stream, 0, numChannels, paInt16,
+                                sampleRate, FRAMES_PER_BUFFER, callback, &buffer);
     if (err != paNoError) { 
         std::cerr << "Failed to open stream: " << Pa_GetErrorText(err) << std::endl;
         return;
@@ -271,16 +302,24 @@ void receiveFile() {
     }
 
     std::cout << "Receiving file: " << fileName << std::endl;
-
+    bool fileRead = false;
     while (true) {
         memset(buffer, 0, BUFFER_SIZE);
         int bytesRead = SSL_read(ssl, buffer, BUFFER_SIZE);
-        if (bytesRead <= 0 || std::string(buffer).find("FILE_TRANSFER_END") != std::string::npos) {
+        if (bytesRead <= 0 || std::string(buffer).find("FILE_TRANSFER_FAILED") != std::string::npos) {
+            std::cout << "File reception failed! End reception..." << std::endl;
+            std::remove((FILE_SAVE_DIR + fileName).c_str());
             break;
+        } else if (std::string(buffer).find("FILE_TRANSFER_END") != std::string::npos) {
+            outFile.close();
+            std::cout << "File received and saved in " << FILE_SAVE_DIR << fileName << std::endl;
+        } else {
+            memset(buffer, 0, BUFFER_SIZE);
+            int bytesRead = SSL_read(ssl, buffer, BUFFER_SIZE);
+            outFile.write(buffer, bytesRead);
         }
-        outFile.write(buffer, bytesRead);
+        
     }
 
-    outFile.close();
-    std::cout << "File received and saved in " << FILE_SAVE_DIR << fileName << std::endl;
+    
 }

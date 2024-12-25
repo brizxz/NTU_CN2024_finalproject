@@ -1,22 +1,19 @@
-# 編譯器
 CXX = g++
-
-# 編譯器選項
 CXXFLAGS = -std=c++11 -Wall
-
-# 執行檔名稱
 SERVER_EXEC = server
 CLIENT_EXEC = client
+DATA_OBJ = audio_streaming.o
 
-# 編譯規則
 all: $(SERVER_EXEC) $(CLIENT_EXEC)
 
-$(SERVER_EXEC): server.cpp
-	$(CXX) $(CXXFLAGS) server.cpp -o $(SERVER_EXEC) -lssl -lcrypto -lportaudio -lmpg123 -lsndfile
+$(SERVER_EXEC): server.cpp $(DATA_OBJ)
+	$(CXX) $(CXXFLAGS) server.cpp $(DATA_OBJ) -o $(SERVER_EXEC) -lssl -lcrypto -lportaudio -lmpg123 -lsndfile
 
-$(CLIENT_EXEC): client.cpp
-	$(CXX) $(CXXFLAGS) client.cpp -o $(CLIENT_EXEC) -lssl -lcrypto -lportaudio -lmpg123 -lsndfile
+$(CLIENT_EXEC): client.cpp $(DATA_OBJ)
+	$(CXX) $(CXXFLAGS) client.cpp $(DATA_OBJ) -o $(CLIENT_EXEC) -lssl -lcrypto -lportaudio -lmpg123 -lsndfile
 
-# 清除編譯生成的檔案
+$(DATA_OBJ): audio_streaming.cpp
+	$(CXX) $(CXXFLAGS) -c audio_streaming.cpp -o $(DATA_OBJ)
+
 clean:
-	rm -f $(SERVER_EXEC) $(CLIENT_EXEC)
+	rm -f $(SERVER_EXEC) $(CLIENT_EXEC) $(DATA_OBJ)
