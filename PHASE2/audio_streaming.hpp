@@ -1,5 +1,10 @@
+#include <iostream>
 #include <cstdint>
 #include <string>
+#include <vector>
+#include <portaudio.h>
+#include <openssl/ssl.h>
+#include <openssl/err.h>
 struct WAVHeader {
     char riff[4];
     uint32_t fileSize;
@@ -15,5 +20,6 @@ struct WAVHeader {
     char data[4];
     uint32_t dataSize;
 };
-
 std::string headerInfo(const WAVHeader& header);
+void sendAudioStream(SSL* ssl);
+void receiveAudioStream(SSL* ssl);

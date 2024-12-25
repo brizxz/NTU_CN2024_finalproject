@@ -6,12 +6,15 @@
 #include <arpa/inet.h>
 #include <csignal>
 #include <pthread.h>
+#include <arpa/inet.h>
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include <unordered_map>
 #include <fstream>
 #include <portaudio.h>
 #include "audio_streaming.hpp"
+#include "ssl.h"
+#include "file_transfer_relay.hpp"
 
 #define PORT 11115
 #define BUFFER_SIZE 4096
@@ -19,130 +22,29 @@
 #define CHUNK_SIZE 4096
 #define THREAD_POOL_SIZE 4
 
+
+SSL* ssl;
+SSL_CTX* ctx;
+
 std::unordered_map<std::string, std::string> users;
 std::unordered_map<std::string, int> connectedClients;
 std::unordered_map<std::string, SSL*> connectedClientSSLs;
 
 pthread_mutex_t clientsMutex = PTHREAD_MUTEX_INITIALIZER;
-SSL_CTX* ctx;
 
 void* handleClient(void* sslPtr);
-void initSSL();
-void cleanupSSL();
-void signalHandler(int);
-
-void initSSL() {
-    SSL_load_error_strings();
-    OpenSSL_add_ssl_algorithms();
-
-    ctx = SSL_CTX_new(TLS_server_method());
-    if (!ctx) {
-        std::cerr << "Unable to create SSL context" << std::endl;
-        exit(EXIT_FAILURE);
-    }
-
-    // Load server certificate and key
-    if (SSL_CTX_use_certificate_file(ctx, "server.crt", SSL_FILETYPE_PEM) <= 0 ||
-        SSL_CTX_use_PrivateKey_file(ctx, "server.key", SSL_FILETYPE_PEM) <= 0) {
-        ERR_print_errors_fp(stderr);
-        exit(EXIT_FAILURE);
-    }
-}
-
-void cleanupSSL() {
-    SSL_CTX_free(ctx);
-    EVP_cleanup();
-}
 
 void signalHandler(int signum) {
     std::cout << "Signal " << signum << " received, shutting down server." << std::endl;
-    cleanupSSL();
+    cleanupSSLServer(ssl, ctx);
     exit(signum);
 }
 
-void transferFile(SSL* senderSsl, const std::string& recipient, const std::string& fileName) {
-    char buffer[BUFFER_SIZE];
-    memset(buffer, 0, BUFFER_SIZE);
-    
-    pthread_mutex_lock(&clientsMutex);
-    int targetSocket = connectedClients[recipient];
-    SSL* receiverSsl = connectedClientSSLs[recipient];
-    pthread_mutex_unlock(&clientsMutex);
-    SSL_write(senderSsl, "FILE_TRANSFER_START_SEND", 24);
-    SSL_write(senderSsl, fileName.c_str(), fileName.size());
-    SSL_write(receiverSsl, "FILE_TRANSFER_START_RECEIVE", 27);
-    SSL_write(receiverSsl, fileName.c_str(), fileName.size());
-    
-    while (true) {
-        std::cout << "Transferring file to " + recipient << std::endl;
-        memset(buffer, 0, BUFFER_SIZE);
-        int bytesRead = SSL_read(senderSsl, buffer, BUFFER_SIZE);
-        if (bytesRead <= 0 || std::string(buffer).find("FILE_TRANSFER_FAILED") != std::string::npos) {
-            SSL_write(receiverSsl, "FILE_TRANSFER_FAILED", 20);
-            break;
-        } else if (std::string(buffer).find("FILE_TRANSFER_END") != std::string::npos ) {
-            SSL_write(receiverSsl, "FILE_TRANSFER_END", 17);
-            break;
-        } else {
-            SSL_write(receiverSsl, "FILE_TRANSFERING", 16);
-            std::cout << "File content received from sender: " << buffer << std::endl;
-            SSL_write(receiverSsl, buffer, bytesRead);
-        }
-    }
-    std::cout << "File transferred to " << recipient << std::endl;
-}
 
-std::ifstream wavFile;
-void streamAudio(SSL* ssl) {
-    SSL_write(ssl, "START_STREAMING", 15);
-    std::cout << "Start streaming, opening file..." << std::endl;
-    // Open the WAV file
-    wavFile.open("hearthstone.wav", std::ios::binary);
-    if (!wavFile.is_open()) {
-        std::cerr << "Failed to open WAV file." << std::endl;
-        return;
-    }
-    std::cout << "File opened" << std::endl;
-    // Read WAV header
-    WAVHeader header;
-    wavFile.read(reinterpret_cast<char*>(&header), sizeof(WAVHeader));
-    std::cout << "Header read" << std::endl;
-    
-    if (strncmp(header.riff, "RIFF", 4) != 0 || strncmp(header.wave, "WAVE", 4) != 0) {
-        std::cerr << "Invalid WAV file." << std::endl;
-        return;
-    }
-    std::cout << "Writing header to client..." << std::endl;
-    std::string WAVHeaderInfo = headerInfo(header);
-    int bytesWritten = SSL_write(ssl, WAVHeaderInfo.c_str(), WAVHeaderInfo.size());
-    std::cout << "Finish writing" << std::endl;
-    if (bytesWritten <= 0) {
-        int sslError = SSL_get_error(ssl, bytesWritten);
-        std::cerr << "SSL_write failed, error: " << sslError << std::endl;
-        return;
-    }
-    std::cout << "Start sending data" << std::endl;
 
-    while (true) {
-        
-        std::vector<uint8_t> buffer(CHUNK_SIZE * header.numChannels);
-        std::streamsize bytesRead = wavFile.read(reinterpret_cast<char*>(buffer.data()), buffer.size()).gcount();
-        // std::cout << "Read a chunk" << std::endl;
-        if (bytesRead <= 0) {
-            break;
-        }
-        SSL_write(ssl, "STREAMING", 9);
-        SSL_write(ssl, &header.numChannels, 1);
-        SSL_write(ssl, buffer.data(), bytesRead);
-        
-    }
-    wavFile.close();
-
-    std::cout << "Playback finished." << std::endl;
-}
 int main() {
     signal(SIGINT, signalHandler);
-    initSSL();
+    initSSLServer(ssl, ctx);
 
     int serverSocket = socket(AF_INET, SOCK_STREAM, 0);
     if (serverSocket == -1) {
@@ -194,7 +96,7 @@ int main() {
     }
 
     close(serverSocket);
-    cleanupSSL();
+    cleanupSSLServer(ssl, ctx);
     return 0;
 }
 
@@ -290,9 +192,9 @@ void* handleClient(void* sslPtr) {
             
             
             pthread_mutex_unlock(&clientsMutex);
-            transferFile(ssl, targetUser, fileName);
+            relayFile(ssl, targetUser, fileName, connectedClients, connectedClientSSLs, clientsMutex);
         } else if (command.substr(0, 9) == "STREAMING") { 
-            streamAudio(ssl);
+            sendAudioStream(ssl);
         }
     }
 
