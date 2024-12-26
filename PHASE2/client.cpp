@@ -90,7 +90,6 @@ int main() {
 
     while (running) {
         std::getline(std::cin, command);
-        std::cout << command << std::endl;
         if (command.compare("EXIT") == 0) {
             running = false;
             break;

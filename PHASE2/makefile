@@ -30,6 +30,7 @@ $(CLIENT_EXEC): client.cpp $(AUDIO_OBJ) $(FILE_OBJ) $(SSL_OBJ) $(VIDEO_OBJ)
 	    -o $(CLIENT_EXEC) \
 	    -lssl -lcrypto -lportaudio -lmpg123 -lsndfile \
 	    $(OPENCV_FLAGS)
+	rm -f $(AUDIO_OBJ) $(FILE_OBJ) $(SSL_OBJ) $(VIDEO_OBJ)
 
 # ---- [Audio Streaming OBJ] ----
 $(AUDIO_OBJ): utils/audio_streaming.cpp utils/audio_streaming.hpp
