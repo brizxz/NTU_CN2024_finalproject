@@ -17,6 +17,7 @@
 #include "utils/ssl.h"
 #include "utils/file_transfer_relay.hpp"
 #include "utils/const.h"
+#include "utils/threadpool.hpp"
 
 
 SSL* ssl;
@@ -78,13 +79,16 @@ int main() {
 
     std::cout << "Connected with " << SSL_get_cipher(ssl) << " encryption" << std::endl;
 
-    pthread_t receiverThread;
-    pthread_create(&receiverThread, nullptr, receiveMessages, nullptr);
+    ThreadPool pool(2);
 
-    // 啟動一個 P2P 監聽的執行緒
-    pthread_t p2pThread;
-    pthread_create(&p2pThread, nullptr, p2pListener, nullptr);
-
+    // enqueue "receiveMessages" 與 "p2pListener" 兩個長期任務
+    // 注意：這裡以 lambda 包裝，以便傳遞參數
+    pool.enqueue([&]() {
+        receiveMessages(nullptr); // 或直接 receiveMessages( (void*)nullptr );
+    });
+    pool.enqueue([&]() {
+        p2pListener(nullptr);
+    });
 
     std::string command;
 
@@ -98,13 +102,7 @@ int main() {
     }
 
     close(clientSocket);
-    pthread_cancel(receiverThread);
-    pthread_join(receiverThread, nullptr);
     cleanupSSLClient(ssl, ctx);
-
-    // 關閉 p2p thread
-    pthread_cancel(p2pThread);
-    pthread_join(p2pThread, nullptr);
 
     return 0;
 }
