@@ -48,10 +48,10 @@ std::string menuString(bool loggedIn) {
             "3. EXIT\n>");
     else return std::string(std::string("Commands:\n") +
             "1. MESSAGE <username> <message>\n" +
-            "2. DIRECT_MSG <targetUser> <message>\n" +
+            "2. DIRECT_MSG <username> <message>\n" +
             "3. SEND_FILE <username> <filepath>\n" +
-            "4. STREAM AUDIO\n" +
-            "5. STREAM VIDEO\n" + 
+            "4. STREAM AUDIO <filepath>\n" +
+            "5. STREAM VIDEO <filepath>\n" + 
             "6. LOGOUT\n" + 
             "7. EXIT");
 
