@@ -54,11 +54,11 @@ static int callback(const void* inputBuffer, void* outputBuffer,
 }
 
 
-void sendAudioStream(SSL* ssl) {
+void sendAudioStream(SSL* ssl, const std::string& filePath) {
     SSL_write(ssl, "START_AUDIO_STREAMING", 21);
     std::cout << "Start streaming, opening file..." << std::endl;
     // Open the WAV file
-    wavFile.open("test_audio/test.wav", std::ios::binary);
+    wavFile.open(filePath, std::ios::binary);
     if (!wavFile.is_open()) {
         std::cerr << "Failed to open WAV file." << std::endl;
         return;

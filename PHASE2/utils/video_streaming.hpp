@@ -25,7 +25,7 @@ std::string videoHeaderInfo(const VideoHeader& header);
 /**
  * 由「Server端」呼叫，讀取本地影片並經由 SSL 發送給 Client。
  */
-void sendVideoStream(SSL* ssl);
+void sendVideoStream(SSL* ssl, const std::string& filePath);
 
 /**
  * 由「Client端」呼叫，接收 Server 傳來的影片資料，並即時播放。

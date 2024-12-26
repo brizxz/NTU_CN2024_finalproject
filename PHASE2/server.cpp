@@ -249,9 +249,32 @@ void* handleClient(void* sslPtr) {
             pthread_mutex_unlock(&clientsMutex);
             relayFile(ssl, recipient, fileName, connectedClients, connectedClientSSLs, clientsMutex);
         } else if (command.substr(0, 12) == "STREAM AUDIO" && loggedIn) { 
-            sendAudioStream(ssl);
+            // 指令格式: STREAM AUDIO <filepath>
+            // 先找空白位置
+            // "STREAM AUDIO " 長度是 13，或你也可直接找第2個空白
+            size_t pos = command.find(' ', 12);
+            if (pos == std::string::npos) {
+                // 沒帶檔案路徑
+                SSL_write(ssl, "STREAM_AUDIO_FAIL: No filepath specified", 40);
+                continue;
+            }
+            // 取出檔案路徑
+            std::string filePath = command.substr(pos + 1);
+
+            // 呼叫新的 sendAudioStream(ssl, filePath)
+            sendAudioStream(ssl, filePath);
         } else if (command.substr(0, 12) == "STREAM VIDEO" && loggedIn) {
-            sendVideoStream(ssl);
+            // 指令格式: STREAM VIDEO <filepath>
+            size_t pos = command.find(' ', 12);
+            if (pos == std::string::npos) {
+                SSL_write(ssl, "STREAM_VIDEO_FAIL: No filepath specified", 40);
+                continue;
+            }
+            std::string filePath = command.substr(pos + 1);
+
+            // 呼叫新的 sendVideoStream(ssl, filePath)
+            sendVideoStream(ssl, filePath);
+            
         } else if (command.substr(0, 10) == "DIRECT_MSG" && loggedIn) {
             // command = "DIRECT_MSG <targetUser> <message>"
             // 解析 targetUser / message
