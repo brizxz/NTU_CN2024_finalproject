@@ -29,7 +29,9 @@ SSL_CTX* ctx;
 int clientSocket;
 bool running = true;
 
-void displayMenu();
+int p2pPort;
+
+
 void* receiveMessages(void*);
 
 void signalHandler(int signum) {
@@ -43,6 +45,9 @@ void signalHandler(int signum) {
 int main() {
     signal(SIGINT, signalHandler);
     
+    std::cout << "Please determine your port: ";
+    std::cin >> p2pPort;
+
     initSSLClient(ssl, ctx);
     clientSocket = socket(AF_INET, SOCK_STREAM, 0);
     if (clientSocket == -1) {

@@ -43,14 +43,15 @@ void signalHandler(int signum) {
 std::string menuString(bool loggedIn) {
     if (!loggedIn) return std::string(std::string("Commands:\n") +
             "1. REGISTER <username> <password>\n" +
-            "2. LOGIN <username> <password>\n"
+            "2. LOGIN <username> <password> <p2pPort>\n"
             "3. EXIT\n>");
     else return std::string(std::string("Commands:\n") +
             "1. MESSAGE <username> <message>\n" +
             "2. SEND_FILE <username> <filepath>\n" +
             "3. STREAM AUDIO\n" +
-            "4. LOGOUT\n" + 
-            "5. EXIT");
+            "4. DIRECT_MSG <targetUser> <message>\n" +
+            "5. LOGOUT\n" + 
+            "6. EXIT");
 
 }
 

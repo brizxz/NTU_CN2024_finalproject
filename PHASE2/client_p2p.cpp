@@ -54,7 +54,7 @@ void displayMenu() {
 }
 int main() {
     signal(SIGINT, signalHandler);
-    std::cout << "Please determine your port ";
+    std::cout << "Please determine your port: ";
     std::cin >> p2pPort;
 
     initSSLClient(ssl, ctx);
