@@ -24,7 +24,7 @@ std::string videoHeaderInfo(const VideoHeader& header) {
 void sendVideoStream(SSL* ssl) {
     SSL_write(ssl, "START_VIDEO_STREAMING", 21);
 
-    std::string filename = "test1.mp4";
+    std::string filename = "test_videos/test1.mp4";
     cv::VideoCapture cap(filename);
     if (!cap.isOpened()) {
         std::cerr << "Failed to open video file.\n";

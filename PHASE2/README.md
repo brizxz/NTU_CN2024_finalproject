@@ -1,6 +1,12 @@
-# 計網PHASE-1 README
-## 如何執行
-1. 首先使用 `make clean` 清除執行檔
-2. 使用 `make` 編譯檔案
-3. 執行 `./server` 和 `./client` 分別執行client和server
-4. 根據你所輸入的功能進行對應的操作
+# Computer Network Course Final Project PHASE 2 ---- Socket Programming
+## Project Description
+This project develops a streamlined client-server system that enables user registration, login, and communication. After logging in, users can exchange messages and files with other clients. Additionally, the system supports basic audio and video streaming.
+
+## Project Build
+1. Compile the server and client using `make clean` and `make`
+2. Run the server and client by typing `./server` and `./client`, respectively.
+
+## Features
+### User Register/Login
+
+After executing the client, you should see a menu listing all available commands. Type `REGISTER <username> <password>` to register a new user. After registration, 

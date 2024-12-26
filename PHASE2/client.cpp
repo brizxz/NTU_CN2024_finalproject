@@ -12,16 +12,11 @@
 #include <sys/types.h>
 #include <vector>
 #include <portaudio.h>
-#include "audio_streaming.hpp"
-#include "video_streaming.hpp"
-#include "ssl.h"
-#include "file_transfer_relay.hpp"
-
-#define PORT 11123
-#define BUFFER_SIZE 4096
-#define FRAMES_PER_BUFFER 2048
-#define CHUNK_SIZE 4096
-#define FILE_SAVE_DIR "received_files/"
+#include "utils/audio_streaming.hpp"
+#include "utils/video_streaming.hpp"
+#include "utils/ssl.h"
+#include "utils/file_transfer_relay.hpp"
+#include "utils/const.h"
 
 
 SSL* ssl;

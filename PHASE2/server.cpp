@@ -12,17 +12,11 @@
 #include <unordered_map>
 #include <fstream>
 #include <portaudio.h>
-#include "audio_streaming.hpp"
-#include "video_streaming.hpp"
-#include "ssl.h"
-#include "file_transfer_relay.hpp"
-
-#define PORT 11123
-#define BUFFER_SIZE 4096
-#define FRAMES_PER_BUFFER 2048
-#define CHUNK_SIZE 4096
-#define THREAD_POOL_SIZE 4
-
+#include "utils/audio_streaming.hpp"
+#include "utils/video_streaming.hpp"
+#include "utils/ssl.h"
+#include "utils/file_transfer_relay.hpp"
+#include "utils/const.h"
 
 SSL* ssl;
 SSL_CTX* ctx;
@@ -278,11 +272,12 @@ void* handleClient(void* sslPtr) {
                 pthread_mutex_unlock(&clientsMutex);
 
                 SSL_write(ssl, info.c_str(), info.size());
-                
-
             } else {
-                SSL_write(ssl, "Invalid command", 15);
+                pthread_mutex_unlock(&clientsMutex);
+                SSL_write(ssl, "DIRECT_MSG_FAIL: Recipient not online" , BUFFER_SIZE);
             }
+        } else {
+            SSL_write(ssl, "Invalid command", 15);
         }
     }
 

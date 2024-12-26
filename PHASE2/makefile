@@ -32,20 +32,20 @@ $(CLIENT_EXEC): client.cpp $(AUDIO_OBJ) $(FILE_OBJ) $(SSL_OBJ) $(VIDEO_OBJ)
 	    $(OPENCV_FLAGS)
 
 # ---- [Audio Streaming OBJ] ----
-$(AUDIO_OBJ): audio_streaming.cpp audio_streaming.hpp
-	$(CXX) $(CXXFLAGS) -c audio_streaming.cpp -o $(AUDIO_OBJ)
+$(AUDIO_OBJ): utils/audio_streaming.cpp utils/audio_streaming.hpp
+	$(CXX) $(CXXFLAGS) -c utils/audio_streaming.cpp -o $(AUDIO_OBJ)
 
 # ---- [Video Streaming OBJ] ----
-$(VIDEO_OBJ): video_streaming.cpp video_streaming.hpp
-	$(CXX) $(CXXFLAGS) $(OPENCV_FLAGS) -c video_streaming.cpp -o $(VIDEO_OBJ)
+$(VIDEO_OBJ): utils/video_streaming.cpp utils/video_streaming.hpp
+	$(CXX) $(CXXFLAGS) $(OPENCV_FLAGS) -c utils/video_streaming.cpp -o $(VIDEO_OBJ)
 
 # ---- [File Transfer Relay OBJ] ----
-$(FILE_OBJ): file_transfer_relay.cpp file_transfer_relay.hpp
-	$(CXX) $(CXXFLAGS) -c file_transfer_relay.cpp -o $(FILE_OBJ)
+$(FILE_OBJ): utils/file_transfer_relay.cpp utils/file_transfer_relay.hpp
+	$(CXX) $(CXXFLAGS) -c utils/file_transfer_relay.cpp -o $(FILE_OBJ)
 
 # ---- [SSL OBJ] ----
-$(SSL_OBJ): ssl.cpp ssl.h
-	$(CXX) $(CXXFLAGS) -c ssl.cpp -o $(SSL_OBJ)
+$(SSL_OBJ): utils/ssl.cpp utils/ssl.h
+	$(CXX) $(CXXFLAGS) -c utils/ssl.cpp -o $(SSL_OBJ)
 
 clean:
 	rm -f $(SERVER_EXEC) $(CLIENT_EXEC) \
