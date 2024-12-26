@@ -9,4 +9,26 @@ This project develops a streamlined client-server system that enables user regis
 ## Features
 ### User Register/Login
 
-After executing the client, you should see a menu listing all available commands. Type `REGISTER <username> <password>` to register a new user. After registration, 
+Upon running the client, a menu displaying all available commands will appear. To register a new user, enter REGISTER <username> <password>. After successful registration, log in by typing LOGIN <username> <password> <p2pPort>, where <p2pPort> specifies the port for peer-to-peer communication.
+
+### Client-to-Client Messaging
+
+This project offers two methods for sending messages: Relay mode and Peer-to-Peer (P2P) mode. In Relay mode, messages are routed through the server, while in P2P mode, messages are sent directly to the port specified during login. To send a message, use RELAY_MSG <username> <message> for Relay mode or DIRECT_MSG <username> <message> for P2P mode.
+
+### File Transfer
+
+This project supports file transfer. To send a file to another client, type SEND_FILE <username> <filepath>. Received files are automatically saved in the received_files folder.
+
+### Audio/Video Streaming 
+
+This project supports audio and video streaming. To start streaming, type `STREAM AUDIO` for audio or `STREAM VIDEO` for video. The server begins streaming upon receiving the command. Audio streaming uses the PortAudio package, while video streaming relies on OpenCV. Currently, audio streaming supports WAV files only.
+
+### OpenSSL Encryption
+
+Every message sent by clients and servers will be encrypted by ssl. 
+
+## Requirement
+- C++ 17
+- pkg-config (Used for compiling)
+- Portaudio
+- Opencv4
