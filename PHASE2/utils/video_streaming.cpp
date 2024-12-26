@@ -1,4 +1,5 @@
 #include "video_streaming.hpp"
+#include <sys/stat.h>  // for stat()
 #include "const.h"  // 若你有共用的 BUFFER_SIZE 等定義，可放這裡
 #include <opencv2/opencv.hpp>
 #include <iostream>
@@ -23,6 +24,14 @@ std::string videoHeaderInfo(const VideoHeader& header) {
  */
 void sendVideoStream(SSL* ssl, std::string filename) {
     SSL_write(ssl, "START_VIDEO_STREAMING", 21);
+
+    struct stat fileStat;
+    if (stat(filename.c_str(), &fileStat) != 0) {
+        std::cerr << "[Server] ERROR: File does not exist => " << filename << std::endl;
+        // 回傳錯誤給 Client
+        SSL_write(ssl, "AUDIO_STREAMING_FAILED: File does not exist", 44);
+        return;
+    }
 
     cv::VideoCapture cap(filename);
     if (!cap.isOpened()) {

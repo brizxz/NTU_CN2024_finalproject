@@ -1,5 +1,6 @@
 #include "audio_streaming.hpp"
 #include "const.h"
+#include <sys/stat.h>  // for stat()
 #include <fstream>
 #include <string>
 
@@ -58,6 +59,15 @@ void sendAudioStream(SSL* ssl, std::string filename) {
     
     std::cout << "Start streaming, opening file " + filename + "..." << std::endl;
     // Open the WAV file
+
+    struct stat fileStat;
+    if (stat(filename.c_str(), &fileStat) != 0) {
+        std::cerr << "[Server] ERROR: File does not exist => " << filename << std::endl;
+        // 回傳錯誤給 Client
+        SSL_write(ssl, "AUDIO_STREAMING_FAILED: File does not exist", 44);
+        return;
+    }
+
     wavFile.open(filename, std::ios::binary);
     if (!wavFile.is_open()) {
         SSL_write(ssl, "AUDIO_STREAMING_FAILED: Can't open wav file", BUFFER_SIZE);
