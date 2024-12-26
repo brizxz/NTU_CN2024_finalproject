@@ -17,6 +17,7 @@
 #include "utils/ssl.h"
 #include "utils/file_transfer_relay.hpp"
 #include "utils/const.h"
+#include "utils/threadpool.hpp"
 
 SSL* ssl;
 SSL_CTX* ctx;
@@ -84,6 +85,8 @@ int main() {
 
     std::cout << "Server listening on port " << PORT << std::endl;
 
+    ThreadPool pool(20);
+
     while (true) {
         sockaddr_in clientAddr;
         socklen_t clientLen = sizeof(clientAddr);
@@ -104,10 +107,13 @@ int main() {
             continue;
         }
 
-        pthread_t thread;
-        SSL* sslPtr = ssl;
-        pthread_create(&thread, nullptr, handleClient, (void*)sslPtr);
-        pthread_detach(thread);
+        // 原本是 pthread_create(&thread, nullptr, handleClient, (void*)sslPtr)
+        // 改成使用 ThreadPool
+        // enqueue 接受一個 lambda，把 ssl 當參數捕獲進來
+        pool.enqueue([ssl]() {
+            // 執行 handleClient(ssl)
+            handleClient((void*)ssl);
+        });
     }
 
     close(serverSocket);
