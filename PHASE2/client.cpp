@@ -90,13 +90,14 @@ int main() {
 
     while (running) {
         std::getline(std::cin, command);
-        if (command == "EXIT") {
+        std::cout << command << std::endl;
+        if (command.compare("EXIT") == 0) {
             running = false;
             break;
         }
         SSL_write(ssl, command.c_str(), command.size());
     }
-
+    std::cout << "Terminating client..." << std::endl;
     close(clientSocket);
     pthread_cancel(receiverThread);
     pthread_join(receiverThread, nullptr);
