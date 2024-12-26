@@ -46,8 +46,8 @@ std::string menuString(bool loggedIn) {
             "2. LOGIN <username> <password> <p2pPort>\n"
             "3. EXIT\n>");
     else return std::string(std::string("Commands:\n") +
-            "1. MESSAGE <username> <message>\n" +
-            "2. DIRECT_MSG <targetUser> <message>\n" +
+            "1. RELAY_MSG <username> <message>\n" +
+            "2. DIRECT_MSG <username> <message>\n" +
             "3. SEND_FILE <username> <filepath>\n" +
             "4. STREAM AUDIO\n" +
             "5. STREAM VIDEO\n" + 
@@ -213,10 +213,10 @@ void* handleClient(void* sslPtr) {
             connectedClientSSLs.erase(currentUser);
             pthread_mutex_unlock(&clientsMutex);
             SSL_write(ssl, "LOGOUT_SUCCESS", 14);
-        } else if (command.substr(0, 7) == "MESSAGE" && loggedIn) {
+        } else if (command.substr(0, 9) == "RELAY_MSG" && loggedIn) {
             pthread_mutex_lock(&clientsMutex);
-            size_t firstSpace = command.find(' ', 8);
-            std::string recipient = command.substr(8, firstSpace - 8);
+            size_t firstSpace = command.find(' ', 10);
+            std::string recipient = command.substr(10, firstSpace - 10);
             std::string message = command.substr(firstSpace + 1);
             message = "New message from " + recipient + ": " + message;
             if (connectedClients.find(recipient) != connectedClients.end()) {
