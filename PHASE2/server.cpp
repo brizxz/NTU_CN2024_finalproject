@@ -52,11 +52,12 @@ std::string menuString(bool loggedIn) {
             "3. EXIT\n>");
     else return std::string(std::string("Commands:\n") +
             "1. MESSAGE <username> <message>\n" +
-            "2. SEND_FILE <username> <filepath>\n" +
-            "3. STREAM AUDIO\n" +
-            "4. DIRECT_MSG <targetUser> <message>\n" +
-            "5. LOGOUT\n" + 
-            "6. EXIT");
+            "2. DIRECT_MSG <targetUser> <message>\n" +
+            "3. SEND_FILE <username> <filepath>\n" +
+            "4. STREAM AUDIO\n" +
+            "5. STREAM VIDEO\n" + 
+            "6. LOGOUT\n" + 
+            "7. EXIT");
 
 }
 
@@ -248,6 +249,8 @@ void* handleClient(void* sslPtr) {
             relayFile(ssl, recipient, fileName, connectedClients, connectedClientSSLs, clientsMutex);
         } else if (command.substr(0, 12) == "STREAM AUDIO" && loggedIn) { 
             sendAudioStream(ssl);
+        } else if (command.substr(0, 12) == "STREAM VIDEO" && loggedIn) {
+            // sendVideoStream(ssl);
         } else if (command.substr(0, 10) == "DIRECT_MSG" && loggedIn) {
             // command = "DIRECT_MSG <targetUser> <message>"
             // 解析 targetUser / message
