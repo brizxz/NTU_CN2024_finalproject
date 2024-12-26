@@ -13,10 +13,11 @@
 #include <fstream>
 #include <portaudio.h>
 #include "audio_streaming.hpp"
+#include "video_streaming.hpp"
 #include "ssl.h"
 #include "file_transfer_relay.hpp"
 
-#define PORT 11115
+#define PORT 11123
 #define BUFFER_SIZE 4096
 #define FRAMES_PER_BUFFER 2048
 #define CHUNK_SIZE 4096
@@ -250,7 +251,7 @@ void* handleClient(void* sslPtr) {
         } else if (command.substr(0, 12) == "STREAM AUDIO" && loggedIn) { 
             sendAudioStream(ssl);
         } else if (command.substr(0, 12) == "STREAM VIDEO" && loggedIn) {
-            // sendVideoStream(ssl);
+            sendVideoStream(ssl);
         } else if (command.substr(0, 10) == "DIRECT_MSG" && loggedIn) {
             // command = "DIRECT_MSG <targetUser> <message>"
             // 解析 targetUser / message

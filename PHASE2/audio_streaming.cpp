@@ -55,7 +55,7 @@ static int callback(const void* inputBuffer, void* outputBuffer,
 
 
 void sendAudioStream(SSL* ssl) {
-    SSL_write(ssl, "START_STREAMING", 15);
+    SSL_write(ssl, "START_AUDIO_STREAMING", 21);
     std::cout << "Start streaming, opening file..." << std::endl;
     // Open the WAV file
     wavFile.open("hearthstone.wav", std::ios::binary);

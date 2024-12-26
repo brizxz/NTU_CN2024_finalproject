@@ -13,10 +13,11 @@
 #include <vector>
 #include <portaudio.h>
 #include "audio_streaming.hpp"
+#include "video_streaming.hpp"
 #include "ssl.h"
 #include "file_transfer_relay.hpp"
 
-#define PORT 11115
+#define PORT 11123
 #define BUFFER_SIZE 4096
 #define FRAMES_PER_BUFFER 2048
 #define CHUNK_SIZE 4096
@@ -130,8 +131,10 @@ void* receiveMessages(void*) {
             sendFileRelay(ssl);
         } else if (response.substr(0, 27) == "FILE_TRANSFER_START_RECEIVE") {
             receiveFileRelay(ssl);
-        } else if (response.substr(0, 15) == "START_STREAMING") {
+        } else if (response.substr(0, 21) == "START_AUDIO_STREAMING") {
             receiveAudioStream(ssl);
+        } else if (response.substr(0, 21) == "START_VIDEO_STREAMING") {
+            receiveVideoStream(ssl);
         } else if (response.substr(0, 9) == "PEER_INFO") {
             // 格式: PEER_INFO <username> <ip> <port> <message>
             // 先簡單用空白切割:
