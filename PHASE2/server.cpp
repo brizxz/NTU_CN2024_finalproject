@@ -30,6 +30,12 @@ std::unordered_map<std::string, std::string> users;
 std::unordered_map<std::string, int> connectedClients;
 std::unordered_map<std::string, SSL*> connectedClientSSLs;
 
+// 用來記錄每個 username 對應的 IP
+std::unordered_map<std::string, std::string> userIPs;
+// 用來記錄每個 username 對應的 p2p port
+std::unordered_map<std::string, int> userPorts;
+
+
 pthread_mutex_t clientsMutex = PTHREAD_MUTEX_INITIALIZER;
 
 void* handleClient(void* sslPtr);
@@ -134,28 +140,62 @@ void* handleClient(void* sslPtr) {
             } else {
                 SSL_write(ssl, "INVALID_REGISTER", 16);
             }
-        } else if (command.substr(0, 5) == "LOGIN") {
-            
-            loggedIn = true;
-            size_t spacePos = command.find(' ', 6);
-            if (spacePos != std::string::npos) {
-                std::string username = command.substr(6, spacePos - 6);
-                std::string password = command.substr(spacePos + 1);
-                pthread_mutex_lock(&clientsMutex);
-                if (users.find(username) != users.end() && users[username] == password) {
-                    connectedClientSSLs[username] = ssl;
-                    loggedIn = true;
-                    currentUser = username;
-                    connectedClients[currentUser] = SSL_get_fd(ssl);
-                    pthread_mutex_unlock(&clientsMutex);
-                    SSL_write(ssl, "LOGIN_SUCCESS", 13);
+        } 
+        else if (command.substr(0, 5) == "LOGIN") {
+            // 假設 command = "LOGIN <username> <password> <p2pPort>"
+            // step1: 找到第一個空白 (user), 第二個空白 (password), 剩下的視為 port
+            size_t firstSpace = command.find(' ', 6); // 6 是 "LOGIN " 之後的位置
+            if (firstSpace != std::string::npos) {
+                size_t secondSpace = command.find(' ', firstSpace + 1);
+                if (secondSpace != std::string::npos) {
+                    // 依序取得 username / password / p2pPort (字串形式)
+                    std::string username = command.substr(6, firstSpace - 6);
+                    std::string password = command.substr(firstSpace + 1, secondSpace - (firstSpace + 1));
+                    std::string portStr  = command.substr(secondSpace + 1);
+
+                    pthread_mutex_lock(&clientsMutex);
+                    // 檢查使用者是否存在、密碼是否正確
+                    if (users.find(username) != users.end() && users[username] == password) {
+                        
+                        // 取得對端 IP
+                        struct sockaddr_in addr;
+                        socklen_t len = sizeof(addr);
+                        getpeername(SSL_get_fd(ssl), (struct sockaddr*)&addr, &len);
+                        std::string ip = inet_ntoa(addr.sin_addr);
+
+                        userIPs[username] = ip;
+
+                        // 將portStr轉成 int，若轉換失敗就給個預設port
+                        int p2pPort = 22222; // 或任何你希望的預設值
+                        try {
+                            p2pPort = std::stoi(portStr);
+                        } catch (...) {
+                            std::cerr << "Invalid port format, use default 22222\n";
+                        }
+                        userPorts[username] = p2pPort;
+
+                        // 剩餘的登入流程
+                        connectedClientSSLs[username] = ssl;
+                        loggedIn = true;
+                        currentUser = username;
+                        connectedClients[currentUser] = SSL_get_fd(ssl);
+                        
+                        pthread_mutex_unlock(&clientsMutex);
+                        
+                        SSL_write(ssl, "LOGIN_SUCCESS", 13);
+                    } else {
+                        pthread_mutex_unlock(&clientsMutex);
+                        SSL_write(ssl, "LOGIN_FAIL", 10);
+                    }
                 } else {
-                    pthread_mutex_unlock(&clientsMutex);
+                    // 假如沒有第二個空白，表示格式不正確
                     SSL_write(ssl, "LOGIN_FAIL", 10);
                 }
+            } else {
+                SSL_write(ssl, "LOGIN_FAIL", 10);
             }
-            
-        } else if (command == "LOGOUT") {
+        }
+        else if (command == "LOGOUT") {
             loggedIn = false;
             pthread_mutex_lock(&clientsMutex);
             connectedClients.erase(currentUser);
@@ -195,6 +235,37 @@ void* handleClient(void* sslPtr) {
             relayFile(ssl, targetUser, fileName, connectedClients, connectedClientSSLs, clientsMutex);
         } else if (command.substr(0, 9) == "STREAMING") { 
             sendAudioStream(ssl);
+        }
+        else if (command.substr(0, 10) == "DIRECT_MSG") {
+            // command = "DIRECT_MSG <targetUser> <message>"
+            // 解析 targetUser / message
+            size_t spacePos = command.find(' ', 11);
+            if (spacePos == std::string::npos) {
+                // 無效格式
+                SSL_write(ssl, "DIRECT_MSG_ERROR", 16);
+                continue;
+            }
+            std::string targetUser = command.substr(11, spacePos - 11);
+            std::string directMsg = command.substr(spacePos + 1);
+
+            pthread_mutex_lock(&clientsMutex);
+            // 檢查 targetUser 是否在線
+            if (connectedClients.find(targetUser) != connectedClients.end()) {
+                // 找到對方 IP / Port
+                std::string peerIP = userIPs[targetUser];
+                int peerPort = userPorts[targetUser];
+
+                // 回傳給發送端: "PEER_INFO <targetUser> <peerIP> <peerPort> <原本想傳的 message>"
+                // 用空白分隔；實際實作時要注意 parsing。
+                std::string info = "PEER_INFO " + targetUser + " " + peerIP + " " 
+                                + std::to_string(peerPort) + " " + directMsg;
+                pthread_mutex_unlock(&clientsMutex);
+
+                SSL_write(ssl, info.c_str(), info.size());
+            } else {
+                pthread_mutex_unlock(&clientsMutex);
+                SSL_write(ssl, "USER_NOT_ONLINE", 15);
+            }
         }
     }
 
