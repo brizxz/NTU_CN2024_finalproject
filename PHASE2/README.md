@@ -21,7 +21,7 @@ This project supports file transfer. To send a file to another client, type SEND
 
 ### Audio/Video Streaming 
 
-This project supports audio and video streaming. To start streaming, type `STREAM AUDIO` for audio or `STREAM VIDEO` for video. The server begins streaming upon receiving the command. Audio streaming uses the PortAudio package, while video streaming relies on OpenCV. Currently, audio streaming supports WAV files only.
+This project supports audio and video streaming. To start streaming, type `STREAM_AUDIO <filename>` for audio or `STREAM VIDEO <filename>` for video. The server begins streaming upon receiving the command. Audio streaming uses the PortAudio package, while video streaming relies on OpenCV. Currently, audio streaming supports WAV files only.
 
 ### OpenSSL Encryption
 

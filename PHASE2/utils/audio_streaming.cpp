@@ -54,13 +54,13 @@ static int callback(const void* inputBuffer, void* outputBuffer,
 }
 
 
-void sendAudioStream(SSL* ssl) {
-    SSL_write(ssl, "START_AUDIO_STREAMING", 21);
-    std::cout << "Start streaming, opening file..." << std::endl;
+void sendAudioStream(SSL* ssl, std::string filename) {
+    
+    std::cout << "Start streaming, opening file " + filename + "..." << std::endl;
     // Open the WAV file
-    wavFile.open("test_audio/test.wav", std::ios::binary);
+    wavFile.open(filename, std::ios::binary);
     if (!wavFile.is_open()) {
-        std::cerr << "Failed to open WAV file." << std::endl;
+        SSL_write(ssl, "AUDIO_STREAMING_FAILED: Can't open wav file", BUFFER_SIZE);
         return;
     }
     std::cout << "File opened" << std::endl;
@@ -71,10 +71,12 @@ void sendAudioStream(SSL* ssl) {
     
     if (strncmp(header.riff, "RIFF", 4) != 0 || strncmp(header.wave, "WAVE", 4) != 0) {
         std::cerr << "Invalid WAV file." << std::endl;
+        SSL_write(ssl, "AUDIO_STREAMING_FAILED: Wrong file format", BUFFER_SIZE);
         return;
     }
     std::cout << "Writing header to client..." << std::endl;
     std::string WAVHeaderInfo = headerInfo(header);
+    SSL_write(ssl, "START_AUDIO_STREAMING", 21);
     int bytesWritten = SSL_write(ssl, WAVHeaderInfo.c_str(), WAVHeaderInfo.size());
     std::cout << "Finish writing" << std::endl;
     if (bytesWritten <= 0) {

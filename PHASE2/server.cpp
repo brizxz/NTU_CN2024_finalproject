@@ -18,6 +18,7 @@
 #include "utils/file_transfer_relay.hpp"
 #include "utils/const.h"
 #include "utils/threadpool.hpp"
+#include <filesystem>
 
 SSL* ssl;
 SSL_CTX* ctx;
@@ -50,8 +51,8 @@ std::string menuString(bool loggedIn) {
             "1. RELAY_MSG <username> <message>\n" +
             "2. DIRECT_MSG <username> <message>\n" +
             "3. SEND_FILE <username> <filepath>\n" +
-            "4. STREAM AUDIO <filepath>\n" +
-            "5. STREAM VIDEO <filepath>\n" + 
+            "4. STREAM_AUDIO <filepath>\n" +
+            "5. STREAM_VIDEO <filepath>\n" + 
             "6. LOGOUT\n" + 
             "7. EXIT");
 
@@ -247,11 +248,16 @@ void* handleClient(void* sslPtr) {
                 continue;
             }
             pthread_mutex_unlock(&clientsMutex);
-            relayFile(ssl, recipient, fileName, connectedClients, connectedClientSSLs, clientsMutex);
-        } else if (command.substr(0, 12) == "STREAM AUDIO" && loggedIn) { 
-            sendAudioStream(ssl);
-        } else if (command.substr(0, 12) == "STREAM VIDEO" && loggedIn) {
-            sendVideoStream(ssl);
+            std::filesystem::path absolutePath = std::filesystem::absolute(fileName);
+            relayFile(ssl, recipient, absolutePath, connectedClients, connectedClientSSLs, clientsMutex);
+        } else if (command.substr(0, 12) == "STREAM_AUDIO" && loggedIn) { 
+            std::string fileName = command.substr(13, command.length() - 13);
+            std::filesystem::path absolutePath = std::filesystem::absolute(fileName);
+            sendAudioStream(ssl, absolutePath);
+        } else if (command.substr(0, 12) == "STREAM_VIDEO" && loggedIn) {
+            std::string fileName = command.substr(13, command.length() - 13);
+            std::filesystem::path absolutePath = std::filesystem::absolute(fileName);
+            sendVideoStream(ssl, absolutePath);
         } else if (command.substr(0, 10) == "DIRECT_MSG" && loggedIn) {
             // command = "DIRECT_MSG <targetUser> <message>"
             // 解析 targetUser / message

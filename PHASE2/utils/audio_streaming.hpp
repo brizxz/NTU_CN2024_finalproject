@@ -21,5 +21,5 @@ struct WAVHeader {
     uint32_t dataSize;
 };
 std::string headerInfo(const WAVHeader& header);
-void sendAudioStream(SSL* ssl);
+void sendAudioStream(SSL* ssl, std::string filename);
 void receiveAudioStream(SSL* ssl);

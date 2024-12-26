@@ -1,5 +1,5 @@
 CXX = g++
-CXXFLAGS = -std=c++11 -Wall
+CXXFLAGS = -std=c++17 -Wall
 
 # 若系統已安裝 pkg-config，可用下行自動找 OpenCV 參數
 # (若沒有 pkg-config 或路徑不同，可以自行改成 -I / -L 形式)

@@ -21,10 +21,9 @@ std::string videoHeaderInfo(const VideoHeader& header) {
 /**
  * Server 端：讀取影片檔並傳送
  */
-void sendVideoStream(SSL* ssl) {
+void sendVideoStream(SSL* ssl, std::string filename) {
     SSL_write(ssl, "START_VIDEO_STREAMING", 21);
 
-    std::string filename = "test_videos/test1.mp4";
     cv::VideoCapture cap(filename);
     if (!cap.isOpened()) {
         std::cerr << "Failed to open video file.\n";
