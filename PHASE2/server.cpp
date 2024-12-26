@@ -40,6 +40,19 @@ void signalHandler(int signum) {
     exit(signum);
 }
 
+std::string menuString(bool loggedIn) {
+    if (!loggedIn) return std::string(std::string("Commands:\n") +
+            "1. REGISTER <username> <password>\n" +
+            "2. LOGIN <username> <password>\n"
+            "3. EXIT\n>");
+    else return std::string(std::string("Commands:\n") +
+            "1. MESSAGE <username> <message>\n" +
+            "2. SEND_FILE <username> <filepath>\n" +
+            "3. STREAM AUDIO\n" +
+            "4. LOGOUT\n" + 
+            "5. EXIT");
+
+}
 
 
 int main() {
@@ -107,16 +120,22 @@ void* handleClient(void* sslPtr) {
     std::string currentUser;
     std::string targetUser;
     while (true) {
+        std::string menuStr = menuString(loggedIn);
+        SSL_write(ssl, menuStr.c_str(), menuStr.size());
         memset(buffer, 0, BUFFER_SIZE);
         int bytesReceived = SSL_read(ssl, buffer, BUFFER_SIZE);
         if (bytesReceived <= 0) {
             std::cout << "Client disconnected." << std::endl;
+            pthread_mutex_lock(&clientsMutex);
+            connectedClients.erase(currentUser);
+            connectedClientSSLs.erase(currentUser);
+            pthread_mutex_unlock(&clientsMutex);
             break;
         }
 
         std::string command(buffer);
         std::cout << "Received: " << command << std::endl;
-        if (command.substr(0, 8) == "REGISTER") {
+        if (command.substr(0, 8) == "REGISTER" && !loggedIn) {
             size_t spacePos = command.find(' ', 9);
             if (spacePos != std::string::npos) {
                 std::string username = command.substr(9, spacePos - 9);
@@ -134,15 +153,15 @@ void* handleClient(void* sslPtr) {
             } else {
                 SSL_write(ssl, "INVALID_REGISTER", 16);
             }
-        } else if (command.substr(0, 5) == "LOGIN") {
+        } else if (command.substr(0, 5) == "LOGIN" && !loggedIn) {
             
-            loggedIn = true;
             size_t spacePos = command.find(' ', 6);
             if (spacePos != std::string::npos) {
                 std::string username = command.substr(6, spacePos - 6);
                 std::string password = command.substr(spacePos + 1);
                 pthread_mutex_lock(&clientsMutex);
-                if (users.find(username) != users.end() && users[username] == password) {
+                if (users.find(username) != users.end() && users[username] == password
+                    && connectedClientSSLs.find(username) == connectedClientSSLs.end()) {
                     connectedClientSSLs[username] = ssl;
                     loggedIn = true;
                     currentUser = username;
@@ -151,18 +170,20 @@ void* handleClient(void* sslPtr) {
                     SSL_write(ssl, "LOGIN_SUCCESS", 13);
                 } else {
                     pthread_mutex_unlock(&clientsMutex);
-                    SSL_write(ssl, "LOGIN_FAIL", 10);
+                    if (users.find(username) == users.end()) SSL_write(ssl, "LOGIN_FAIL: User does not exist", BUFFER_SIZE);
+                    else if (users[username] != password) SSL_write(ssl, "LOGIN_FAIL: Wrong password", BUFFER_SIZE);
+                    else SSL_write(ssl, "LOGIN_FAIL: The user is already logged in on another client", BUFFER_SIZE);
                 }
             }
             
-        } else if (command == "LOGOUT") {
+        } else if (command == "LOGOUT" && loggedIn) {
             loggedIn = false;
             pthread_mutex_lock(&clientsMutex);
             connectedClients.erase(currentUser);
             connectedClientSSLs.erase(currentUser);
             pthread_mutex_unlock(&clientsMutex);
             SSL_write(ssl, "LOGOUT_SUCCESS", 14);
-        } else if (command.substr(0, 7) == "MESSAGE") {
+        } else if (command.substr(0, 7) == "MESSAGE" && loggedIn) {
             pthread_mutex_lock(&clientsMutex);
             size_t spacePos = command.find(' ', 8);
             std::string recipient = command.substr(8, spacePos - 8);
@@ -178,23 +199,23 @@ void* handleClient(void* sslPtr) {
                 SSL_write(ssl, "USER_NOT_ONLINE", 15);
             }
             pthread_mutex_unlock(&clientsMutex);
-        } else if (command.substr(0, 9) == "SEND_FILE") {
+        } else if (command.substr(0, 9) == "SEND_FILE" && loggedIn) {
             size_t pos = command.find(' ', 10);
-            targetUser = command.substr(10, pos - 10);
+            std::string recipient = command.substr(10, pos - 10);
             std::string fileName = command.substr(pos + 1, command.length() - pos);
             pthread_mutex_lock(&clientsMutex);
-            if (connectedClients.find(targetUser) == connectedClients.end()) {
-                std::string errorMsg = "ERROR: " + targetUser + " is not online.";
+            if (connectedClients.find(recipient) == connectedClients.end()) {
+                std::string errorMsg = "ERROR: " + recipient + " is not online.";
                 SSL_write(ssl, errorMsg.c_str(), errorMsg.size());
                 pthread_mutex_unlock(&clientsMutex);
                 continue;
             }
-            
-            
             pthread_mutex_unlock(&clientsMutex);
-            relayFile(ssl, targetUser, fileName, connectedClients, connectedClientSSLs, clientsMutex);
-        } else if (command.substr(0, 9) == "STREAMING") { 
+            relayFile(ssl, recipient, fileName, connectedClients, connectedClientSSLs, clientsMutex);
+        } else if (command.substr(0, 12) == "STREAM AUDIO" && loggedIn) { 
             sendAudioStream(ssl);
+        } else {
+            SSL_write(ssl, "Invalid command", 15);
         }
     }
 

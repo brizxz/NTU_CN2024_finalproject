@@ -39,16 +39,7 @@ void signalHandler(int signum) {
     exit(signum);
 }
 
-void displayMenu() {
-    std::cout << "Commands:\n"
-              << "1. REGISTER <username> <password>\n"
-              << "2. LOGIN <username> <password>\n"
-              << "3. LOGOUT\n"
-              << "4. MESSAGE <username> <message>\n"
-              << "5. SEND_FILE <username> <filepath>\n"
-              << "6. STREAMING\n"
-              << "7. EXIT\n";
-}
+
 int main() {
     signal(SIGINT, signalHandler);
     
@@ -87,18 +78,16 @@ int main() {
     pthread_t receiverThread;
     pthread_create(&receiverThread, nullptr, receiveMessages, nullptr);
 
-    displayMenu();
+    
     std::string command;
 
     while (running) {
-        std::cout << "> ";
         std::getline(std::cin, command);
-        SSL_write(ssl, command.c_str(), command.size());
-
         if (command == "EXIT") {
             running = false;
             break;
         }
+        SSL_write(ssl, command.c_str(), command.size());
     }
 
     close(clientSocket);
@@ -112,6 +101,10 @@ void* receiveMessages(void*) {
     
     char buffer[BUFFER_SIZE];
     while (running) {
+        memset(buffer, 0, BUFFER_SIZE);
+        SSL_read(ssl, buffer, BUFFER_SIZE);
+        std::string menuStr(buffer);
+        std::cout << menuStr << std::endl;
         memset(buffer, 0, BUFFER_SIZE);
         int bytesReceived = SSL_read(ssl, buffer, BUFFER_SIZE);
         if (bytesReceived <= 0) {
