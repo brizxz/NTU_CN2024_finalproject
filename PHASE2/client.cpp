@@ -22,6 +22,10 @@
 SSL* ssl;
 SSL_CTX* ctx;
 
+// 新增一個 p2pServerCtx 用於在 p2pListener() 中做 SSL_accept()
+SSL_CTX*   p2pServerCtx = nullptr;
+
+
 int clientSocket;
 bool running = true;
 

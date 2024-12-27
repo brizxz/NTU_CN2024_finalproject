@@ -248,8 +248,8 @@ void* handleClient(void* sslPtr) {
                 continue;
             }
             pthread_mutex_unlock(&clientsMutex);
-            std::filesystem::path absolutePath = std::filesystem::absolute(fileName);
-            relayFile(ssl, recipient, absolutePath, connectedClients, connectedClientSSLs, clientsMutex);
+            // std::filesystem::path absolutePath = std::filesystem::absolute(fileName);
+            relayFile(ssl, recipient, fileName, connectedClients, connectedClientSSLs, clientsMutex);
         } else if (command.substr(0, 12) == "STREAM_AUDIO" && loggedIn) { 
             std::string fileName = command.substr(13, command.length() - 13);
             std::filesystem::path absolutePath = std::filesystem::absolute(fileName);
