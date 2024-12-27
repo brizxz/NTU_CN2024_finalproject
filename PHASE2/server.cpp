@@ -231,7 +231,7 @@ void* handleClient(void* sslPtr) {
                 SSL* targetSSL = connectedClientSSLs[recipient];
                 SSL_set_fd(targetSSL, targetSocket);
                 SSL_write(targetSSL, message.c_str(), message.size());
-                SSL_free(targetSSL);
+                // SSL_free(targetSSL);
             } else {
                 SSL_write(ssl, "USER_NOT_ONLINE", 15);
             }
