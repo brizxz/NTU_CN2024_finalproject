@@ -1,4 +1,8 @@
 # Computer Network Course Final Project PHASE 2 ---- Socket Programming
+## Project Member
+B11902037 劉丞浩
+B11902073 蘇翊軒
+
 ## Project Description
 This project develops a streamlined client-server system that enables user registration, login, and communication. After logging in, users can exchange messages and files with other clients. Additionally, the system supports basic audio and video streaming.
 
